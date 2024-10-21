@@ -1,0 +1,61 @@
+# Ignore Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Ignore virtual environments
+venv/
+env/
+.venv/
+.venv.bak/
+
+# Ignore Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Ignore system files
+.DS_Store
+Thumbs.db
+
+# Ignore log files and temporary files
+*.log
+*.tmp
+*.swp
+*.swo
+
+# Ignore compiled C extensions
+*.so
+
+# Ignore backup files
+*.bak
+*.old
+
+# Ignore coverage reports
+htmlcov/
+.coverage
+.coverage.*
+.cache
+
+# Ignore distributions / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+MANIFEST
+
+# Ignore pytest cache
+.pytest_cache/
+
+# Ignore mypy cache
+.mypy_cache/
+
+# Ignore IDE/editor settings (optional)
+.vscode/
+.idea/
+
+# Ignore PySW package compiled files
+PySW/__pycache__/
+PySW/*.pyc
+PySW/.ipynb_checkpoints/
+
+# Ignore global gitignore entries (if applicable)
+.gitignore_global
