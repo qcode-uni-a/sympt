@@ -57,7 +57,8 @@ from tqdm import tqdm, trange
 from tabulate import tabulate
 from numpy import nonzero as np_nonzero
 from sympy import (Rational as sp_Rational, factorial as sp_factorial,
-                   nsimplify as sp_nsimplify, simplify as sp_simplify)
+                   nsimplify as sp_nsimplify, simplify as sp_simplify,
+                   UnevaluatedExpr)
 
 
 
@@ -98,7 +99,8 @@ def Denominator(H0_expr, uu, vv, Delta):
         Epsilon_j = mul_group.fn
         E_mu = Epsilon_j[uu, uu]
         E_nu = Epsilon_j[vv, vv]
-        E += sp_nsimplify((E_mu * Mul(*(Ns**js)) - E_nu * Mul(*((Ns - Delta)**js))))
+        E += sp_nsimplify((E_mu * Mul(*(Ns**js)).simplify() - E_nu * Mul(*((Ns - Delta)**js)).simplify()))
+
     return E.expand().simplify()
 
 def get_S(H0_expr, equation_to_solve):
@@ -174,16 +176,44 @@ class EffectiveFrame:
         self.H_old = H
         self.V_old = V
 
-        if self.H_old.has(RDOperator) and subspaces is None:
-            raise ValueError('Subspaces must be provided when the Hamiltonian contains RDOperator objects.')
-
         self.subspaces = subspaces
 
+        self.__return_form = 'operator'
+
         self.__structure = count_bosonic_subspaces(self.H_old)
+        Ns = np_array(list(self.__structure.keys()))
+        self.commutation_relations = dict(zip(np_vectorize(lambda x: Mul(*(x.as_ordered_factors()[::-1])))(Ns), Ns + 1)) if self.__structure  != {} else {}  # Compute the commutation relations for the bosonic subspaces (a*ad = ad * a + 1)
+
+        self.formater()
 
         print('The EffectiveFrame object has been initialized successfully.')
         print(self.__str__())
 
+    def formater(self):
+        if self.H_old.has(RDOperator) and self.subspaces is None:
+            raise ValueError('Subspaces must be provided when the Hamiltonian contains RDOperator objects.')
+        
+        if isinstance(self.H_old, Matrix):
+            if self.V_old is not None and not isinstance(self.V_old, Matrix):
+                raise ValueError('The type of V and H must be the same.')
+        
+            if self.V_old is not None and self.H_old.shape != self.V_old.shape:
+                raise ValueError('The shapes of V and H must be the same.')
+            
+            if self.subspaces is None:
+                self.__return_form = 'matrix'
+                finite_subspace = RDBasis('f', self.H_old.shape[0])
+                self.subspaces = [finite_subspace]
+            self.__composite_basis = RDCompositeBasis(self.subspaces)
+
+            if self.__composite_basis.dim != self.H_old.shape[0]:
+                raise ValueError(f'The dimension of the finite subspace {self.__composite_basis.dim} must be the same as the Hamiltonian {self.H_old.shape[0]}.')
+            
+            self.H_old = self.__composite_basis.project(self.H_old)
+            if self.V_old is not None:
+                self.V_old = self.__composite_basis.project(self.V_old)
+
+                
 
     def solve(self, max_order=2, full_diagonalization=False, mask=None):
         """
@@ -198,7 +228,10 @@ class EffectiveFrame:
         mask : Expression, optional
             A mask expression used for selectively applying transformations (default is None).
         """
-        do_regular_SW = not full_diagonalization and mask is None                                               # Check if the regular Schrieffer-Wolff transformation should be used or not
+        do_regular_SW = not full_diagonalization and mask is None                                                              # Check if the regular Schrieffer-Wolff transformation should be used or not
+        
+        if do_regular_SW and self.V_old is None:                                                                               # Check if the perturbative interaction is provided
+            raise ValueError('The perturbative interaction must be provided for the regular Schrieffer-Wolff transformation')  # Raise an error if the perturbative interaction is not provided
 
         if full_diagonalization and mask is not None:                                                        # Check if the mask is used in the full diagonalization mode
             mask = None
@@ -219,10 +252,6 @@ class EffectiveFrame:
         if mask is not None:
             mask.add_structure(self.__structure )                                                       # Add the structure of the bosonic subspaces to the mask
 
-        Ns = np_array(list(self.__structure.keys()))
-        commutation_relations = dict(zip(np_vectorize(lambda x: Mul(*(x.as_ordered_factors()[::-1])))(Ns), Ns + 1)) if self.__structure  != {} else {}  # Compute the commutation relations for the bosonic subspaces (a*ad = ad * a + 1)
-
-        
         Hs_aux = get_perturbative_expression(self.H_old, self.__structure , self.subspaces)               # Compute the perturbative expression for the Hamiltonian
 
         if do_regular_SW:           # If the regular Schrieffer-Wolff transformation is used
@@ -248,7 +277,7 @@ class EffectiveFrame:
                 
                 Hs[h_order] = new_hk
                 Vs[h_order] = new_vk
-
+        
 
         @memoized
         def nest_commute(parts, is_Vs): 
@@ -268,7 +297,9 @@ class EffectiveFrame:
                 return commutator(Os.get(parts[0], 0), Ss[parts[1]])
             return commutator(nest_commute(parts[:-1], is_Vs), Ss[parts[-1]])
 
-        H0_expr = Hs.get(0) + Expression()
+        H0_expr = apply_commutation_relations(Hs.get(0) + Expression(), self.commutation_relations).simplify()          # Apply the commutation relations to the zeroth-order Hamiltonian      
+
+        H0_expr, ns_comms = extract_ns(H0_expr, self.__structure)                                                                                   # Extract the number operators from  the zeroth-order Hamiltonian
 
         H_final = H0_expr
 
@@ -303,17 +334,16 @@ class EffectiveFrame:
                     H_final = (H_final + new_hf).simplify()                                 # Add the nested commutator to the final Hamiltonian
 
             if B_k.expr.shape[0] != 0:
-                B_k = (apply_commutation_relations(B_k, commutation_relations)).simplify()  # Apply the commutation relations to the operator B_k
+                B_k = (apply_commutation_relations(B_k, self.commutation_relations)).simplify()  # Apply the commutation relations to the operator B_k
                 
             S_k = (get_S(H0_expr, -B_k)).simplify()                                       # Compute the anti-Hermitian operator S for the perturbative order
             Ss[order] = S_k                                                             # Store the anti-Hermitian operator S for the perturbative order
-            H_final = (apply_commutation_relations(H_final, commutation_relations)).simplify()  # Apply the commutation relations to the final Hamiltonian
+            H_final = (apply_commutation_relations(H_final, self.commutation_relations)).simplify()  # Apply the commutation relations to the final Hamiltonian
 
 
-        H_final = (apply_commutation_relations(H_final, commutation_relations)).simplify()  # Apply the commutation relations to the final Hamiltonian
+        H_final = (apply_substituitions(apply_commutation_relations(H_final, self.commutation_relations).simplify(), ns_comms)).simplify()  # Apply the commutation relations to the final Hamiltonian
 
         # Store the results
-        self.commutation_relations = commutation_relations
         self.__max_order = max_order
         self.__S = Ss
         self.__H_final = H_final
@@ -324,81 +354,119 @@ class EffectiveFrame:
             del(self.__H_operator_form)
         if hasattr(self, '_EffectiveFrame__H_matrix_form'):
             del(self.__H_matrix_form)
+        if hasattr(self, '_EffectiveFrame__H_dict_form'):
+            del(self.__H_dict_form)
         if hasattr(self, 'H'):
             del(self.H)
 
         print('The Hamiltonian has been solved successfully. Please use the get_H method to get the result in the desired form.')
 
-    def __prepare_result(self, O_final, return_operator_form=True):
+    def __prepare_result(self, O_final, return_form='operator'):
         """
         Prepares the result for the effective Hamiltonian or an operator after solving or rotating.
 
         This method converts the final operator expression into either operator form or matrix form depending on the
-        value of the `return_operator_form` parameter.
+        value of the `return_form` parameter.
 
         Parameters
         ----------
         O_final : Expression
             The final expression for the operator or Hamiltonian after solving or rotation.
-        return_operator_form : bool, optional
-            If True, returns the result in operator form (default is True). If False, returns the matrix form.
+        return_form : str, optional
+            If 'operator', returns the result in operator form (default is 'operator'). 
+            If 'matrix', returns the matrix form.
+            If 'dict' or 'dict_operator', returns the dictionary form with projected finite subspaces.
+            If 'dict_matrix', returns the dictionary form with the full matrix.
 
         Returns
         -------
         Expr or Matrix
-            The resulting operator in the chosen form. If `return_operator_form` is True, it returns an operator expression.
+            The resulting operator in the chosen form. If `return_form` is True, it returns an operator expression.
             If False, it returns the matrix form of the operator.
         """
-        if self.subspaces is not None and return_operator_form:
-            composite_basis = RDCompositeBasis(self.subspaces)
-            O_final_projected = np_sum([composite_basis.project(mul_group.fn) * Mul(*mul_group.inf) for mul_group in tqdm(O_final.expr, desc='Projecting to operator form')])
+        if isinstance(return_form, bool):
+            return_form = 'operator' if return_form else 'matrix'
+
+        if self.subspaces is not None and return_form == 'operator':
+            O_final_projected = np_sum([self.__composite_basis.project(mul_group.fn) * Mul(*mul_group.inf).simplify() for mul_group in tqdm(O_final.expr, desc='Projecting to operator form')])
 
             return O_final_projected
         
-        O_matrix_form = sp_zeros(O_final.expr[0].fn.shape[0], O_final.expr[0].fn.shape[1])
+        elif return_form == 'matrix':
         
-        for mul_group in tqdm(O_final.expr, desc='Converting to matrix form'):
-            O_matrix_form += mul_group.fn * Mul(*mul_group.inf)
-        
-        if self.subspaces is None:
-            return O_matrix_form[0]
-        
-        return O_matrix_form
+            O_matrix_form = sp_zeros(O_final.expr[0].fn.shape[0], O_final.expr[0].fn.shape[1])
+            
+            for mul_group in tqdm(O_final.expr, desc='Converting to matrix form'):
+                O_matrix_form += mul_group.fn * Mul(*mul_group.inf).simplify()
+            
+            if self.subspaces is None:
+                return O_matrix_form[0]
+            
+            return O_matrix_form
+        else:
+            return_form, extra = return_form.split('_') if '_' in return_form else (return_form, 'operator')
+            if return_form == 'dict':
+                O_dict_form = {}
 
-    def get_H(self, return_operator_form=True):
+                if extra == 'operator':
+                    for mul_group in tqdm(O_final.expr, desc='Converting to dictionary (operator) form'):
+                        O_dict_form[Mul(*mul_group.inf)] = self.__composite_basis.project(mul_group.fn)
+                elif extra == 'matrix':
+                    for mul_group in tqdm(O_final.expr, desc='Converting to dictionary (matrix) form'):
+                        O_dict_form[Mul(*mul_group.inf)] = mul_group.fn
+                
+                return O_dict_form
+            
+            raise ValueError('Invalid return form. Please choose either: ' + ', '.join(['operator', 'matrix', 'dict', 'dict_operator', 'dict_matrix']))
+
+
+    def get_H(self, return_form=None):
         """
         Returns the effective Hamiltonian.
 
         Parameters
         ----------
-        return_operator_form : bool, optional
-            If True, returns the Hamiltonian in operator form; otherwise, returns it in matrix form (default is True).
+        return_form : str, optional
+            If 'operator', returns the result in operator form (default is 'operator'). 
+            If 'matrix', returns the matrix form.
+            If 'dict' or 'dict_operator', returns the dictionary form with projected finite subspaces.
+            If 'dict_matrix', returns the dictionary form with the full matrix.
 
         Returns
         -------
         Expression or Matrix
             The effective Hamiltonian in the specified form.
         """
+
+        return_form = self.__return_form if return_form is None else return_form
+
         if not hasattr(self, '_EffectiveFrame__H_final'):
             raise AttributeError('The Hamiltonian has not been solved yet. Please run the solver method first.')
 
-        if return_operator_form:
+        if return_form == 'operator':
             if hasattr(self, '_EffectiveFrame__H_operator_form'):
                 return self.__H_operator_form
                 
-            self.__H_operator_form = self.__prepare_result(self.__H_final, return_operator_form)
+            self.__H_operator_form = self.__prepare_result(self.__H_final, return_form)
             self.H = self.__H_operator_form
-            return self.__H_operator_form
 
-        if hasattr(self, '_EffectiveFrame__H_matrix_form'):
-            return self.__H_matrix_form
+        elif return_form == 'matrix':
+            if hasattr(self, '_EffectiveFrame__H_matrix_form'):
+                return self.__H_matrix_form
         
-        self.__H_matrix_form = self.__prepare_result(self.__H_final, return_operator_form)
-        self.H = self.__H_matrix_form
-        return self.__H_matrix_form
+            self.__H_matrix_form = self.__prepare_result(self.__H_final, return_form)
+            self.H = self.__H_matrix_form
 
+        elif return_form == 'dict':
+            if hasattr(self, '_EffectiveFrame__H_dict_form'):
+                return self.__H_dict_form
+            
+            self.__H_dict_form = self.__prepare_result(self.__H_final, return_form)
+            self.H = self.__H_dict_form
+        
+        return self.H
     
-    def rotate(self, expr, max_order=None, return_operator_form=True):
+    def rotate(self, expr, max_order=None, return_form=True):
         """
         Rotates a given expression according to the computed transformation S.
 
@@ -408,8 +476,11 @@ class EffectiveFrame:
             The expression to rotate.
         max_order : int, optional
             The maximum order to consider during the rotation (default is None).
-        return_operator_form : bool, optional
-            If True, returns the rotated expression in operator form; otherwise, returns it in matrix form (default is True).
+        return_form : str, optional
+            If 'operator', returns the result in operator form (default is 'operator').
+            If 'matrix', returns the matrix form.
+            If 'dict' or 'dict_operator', returns the dictionary form with projected finite subspaces.
+            If 'dict_matrix', returns the dictionary form with the full matrix.
 
         Returns
         -------
@@ -418,6 +489,8 @@ class EffectiveFrame:
         """
         if max_order is None:
             max_order = max(self.__S.keys())
+
+        return_form = self.__return_form if return_form is None else return_form
 
         Os = get_perturbative_expression(expr, self.__structure, self.subspaces)
 
@@ -442,7 +515,7 @@ class EffectiveFrame:
         
         result = (apply_commutation_relations(result, self.commutation_relations)).simplify()
 
-        return self.__prepare_result(result, return_operator_form)
+        return self.__prepare_result(result, return_form)
     
     def __str__(self):
         information = '\nEffective Frame\n\n'

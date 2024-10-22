@@ -613,8 +613,8 @@ class MulGroup(Expr):
     fn : Expr
         The matrix of functions of number operators associated with the group.
     
-    inf : int or float
-        A multiplicative scalar factor for the group.
+    inf : ndarray[Mul[BosonOp]]
+        The multiplicative bosonic operator for the group.
     
     delta : int
         Represents a shift or offset for the group.
@@ -1124,5 +1124,7 @@ class RDSymbol(Symbol):
 
     def __new__(cls, name, *args, order=0, **kwargs):
         obj = Symbol.__new__(cls, name, *args, **kwargs)
+        if isinstance(order, complex):
+            raise ValueError('Order must be real.')
         obj._order = order
         return obj

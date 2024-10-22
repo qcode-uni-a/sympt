@@ -52,10 +52,10 @@ from numpy import (any as np_any, all as np_all, array as np_array,
                    ndarray as np_ndarray, logical_not as np_logical_not,
                    ones as np_ones, vectorize as np_vectorize,
                    zeros as np_zeros)
-from sympy import (Expr, Mul, Pow, Symbol, eye, kronecker_product, latex,
+from sympy import (Expr, Mul, Add, Pow, Symbol, eye, kronecker_product, latex,
                    zeros as sp_zeros, sqrt as sp_sqrt, diag as sp_diag)
 from sympy.core.numbers import (Float, Half, ImaginaryUnit, Integer, One, Rational, Pi)
-from sympy.physics.quantum import Dagger
+from sympy.physics.quantum import Dagger, Operator
 from sympy.physics.quantum.boson import BosonOp
 
 # Local application/library imports
@@ -160,6 +160,36 @@ def get_order(factor: Symbol):
         return factor.order, ('other', None)
     return 0, ('other', None)
 
+@multimethod
+def get_order(expr: Expr):
+    """
+    Determines the order of an expression.
+    
+    Parameters
+    ----------
+    expr : Expr
+        The expression to evaluate.
+    
+    Returns
+    -------
+    tuple
+        The order and its classification ('other').
+    """
+    ops = list(expr.atoms(BosonOp) | expr.atoms(RDOperator))
+    if len(ops) > 0:
+        raise ValueError(f"The Hamiltonian contains non-integer or non-positive powers of the operators {ops}.")
+    
+    if isinstance(expr, Mul):
+        return sum([get_order(op)[0] for op in expr.args]), ('other', None)
+    
+    if isinstance(expr, Add):
+        orders = set([get_order(op)[0] for op in expr.args])
+        if len(orders) > 1:
+            raise ValueError(f"The Hamiltonian contains non-integer or non-positive powers of the sum of terms with different orders: {orders}. Thus, the order of {expr} is ambiguous.")
+        
+        return orders.pop(), ('other', None)
+        
+
 def group_by_order(expr):
     """
     Groups terms in an expression by their order, separating finite and infinite terms.
@@ -173,6 +203,8 @@ def group_by_order(expr):
     -------
     dict
         A dictionary mapping orders to terms in the expression.
+
+        {order: [{'other': [other_factors], 'finite': [finite_operators], 'infinite': {infinite_operators}}, ...]}
 
     """
     terms = expr.expand().as_ordered_terms()        # Expand and get ordered terms from the expression to group
@@ -363,8 +395,52 @@ def domain_expansion(term:dict, structure={}, subspaces=None):
         [x] This can be optized with general rules for commutation relations.
         [ ] This can be parallelized over the terms.
         [ ] Can we optimize the while loop, maybe using wildcards?
+        [ ] Add checkings for the commutation relations, that's why commutation_relations is in a different function.
 ---------------------------------------------------------------------------------------------------------------------------------------                                                        
 '''
+
+def apply_substituitions(expr:Expression, subs:dict):
+    """
+    Applies commutation relations to the infinite part of a given expression.
+
+    Parameters
+    ----------
+    expr : Expression
+        The expression to which commutation relations are applied.
+    commutation_relations : dict
+        A dictionary of commutation relations to apply.
+
+    Returns
+    -------
+    Expression
+        A new expression after applying the commutation relations.
+    """
+
+    mul_groups = expr.expr
+    result = Expression()
+    for group in mul_groups:                        # Iterate over the MulGroups in the expression
+        inf = group.inf                            # Get the infinite part of the MulGroup
+        fn = group.fn                           # Get the function of the MulGroup
+        delta = group.delta                    # Get the boson count of the MulGroup
+        inf_new = np_vectorize(lambda x: x.subs(subs).expand() if isinstance(x, Expr) else x, otypes=[object])(inf)    # Apply the commutation relations to the infinite part
+
+        while np_any(inf_new != inf):
+            # Can we optimize this?
+            inf = inf_new
+            inf_new = np_vectorize(lambda x: x.subs(subs).expand() if isinstance(x, Expr) else x, otypes=[object])(inf)    # Apply the commutation relations to the infinite part
+
+        inf_terms = np_vectorize(lambda x: x.as_ordered_terms() if isinstance(x, Expr) else [x], otypes=[np_ndarray])(inf)  # Get the terms of the infinite part
+        product_terms = product(*inf_terms) # Get the product of the terms
+        
+        for new_inf in product_terms:
+            coeff_inf_array = np_vectorize(lambda x: list(x.as_coeff_Mul()) if isinstance(x, Expr) else [x, 1], otypes=[object])(new_inf)   # Get the coefficient and the term of the infinite part
+            coeff = Mul(*[coeff for coeff, _ in coeff_inf_array])   # Get the coefficient of the infinite part
+            inf = np_array([term for _, term in coeff_inf_array])   # Get the term of the infinite part
+
+            result += MulGroup(fn * coeff, inf, delta, group.Ns)    # Add the new MulGroup to the result
+
+    return result
+
 
 def apply_commutation_relations(expr:Expression, commutation_relations:dict):
     """
@@ -382,31 +458,32 @@ def apply_commutation_relations(expr:Expression, commutation_relations:dict):
     Expression
         A new expression after applying the commutation relations.
     """
-    mul_groups = expr.expr
-    result = Expression()
-    for group in mul_groups:                        # Iterate over the MulGroups in the expression
-        inf = group.inf                            # Get the infinite part of the MulGroup
-        fn = group.fn                           # Get the function of the MulGroup
-        delta = group.delta                    # Get the boson count of the MulGroup
-        inf_new = np_vectorize(lambda x: x.subs(commutation_relations).expand() if isinstance(x, Expr) else x, otypes=[object])(inf)    # Apply the commutation relations to the infinite part
+    return apply_substituitions(expr, commutation_relations)
 
-        while np_any(inf_new != inf):
-            # Can we optimize this?
-            inf = inf_new
-            inf_new = np_vectorize(lambda x: x.subs(commutation_relations).expand() if isinstance(x, Expr) else x, otypes=[object])(inf)    # Apply the commutation relations to the infinite part
+def extract_ns(expr:Expression, structure:dict):
+    """
+    Extracts the subspaces from the infinite part of a given expression.
 
-        inf_terms = np_vectorize(lambda x: x.as_ordered_terms() if isinstance(x, Expr) else [x], otypes=[np_ndarray])(inf)  # Get the terms of the infinite part
-        product_terms = product(*inf_terms) # Get the product of the terms
-        
-        for new_inf in product_terms:
-            coeff_inf_array = np_vectorize(lambda x: list(x.as_coeff_Mul()) if isinstance(x, Expr) else [x, 1], otypes=[object])(new_inf)   # Get the coefficient and the term of the infinite part
-            coeff = Mul(*[coeff for coeff, _ in coeff_inf_array])   # Get the coefficient of the infinite part
-            inf = np_array([term for _, term in coeff_inf_array])   # Get the term of the infinite part
+    Parameters
+    ----------
+    expr : Expression
+        The expression to extract subspaces from.
 
-            result += MulGroup(fn * coeff, inf, delta, group.Ns)    # Add the new MulGroup to the result
+    Returns
+    -------
+    Expression
+        A new expression with the subspaces extracted.
+    """
 
-    return result
+    if structure  == {}:
+        return expr
 
+    Ns = np_array(list(structure.keys()))
+    Ads, As = np_array([N.as_ordered_factors() for N in Ns]).T
+
+    ns_comm = dict(zip(Ads**2 * As, (Ns - 1) * Ads ))
+
+    return apply_substituitions(expr, ns_comm), ns_comm
 
 '''
 ---------------------------------------------------------------------------------------------------------------------------------------
@@ -587,7 +664,7 @@ def group_by_operators(expr):
                 result_term *= factor
                 continue
             result_coeff *= factor
-
+        result_term = result_term.simplify() if isinstance(result_term, Mul) else result_term
         result_dict[result_term] = result_dict.get(result_term, 0) + result_coeff
     
     return result_dict
@@ -611,6 +688,25 @@ def get_perturbative_expression(expr, structure, subspaces=None):
         A dictionary mapping orders to their corresponding simplified expressions.
     """
     expr_ordered_dict = group_by_order(expr)
+    orders = np_array(list(expr_ordered_dict.keys()))
+
+    min_order = min(orders)
+    if min_order < 0:
+        term_negative = [Mul(*terms['other']) for terms in expr_ordered_dict[min_order]]
+        error_message = f"The expression contains the terms ["
+        error_message += ", ".join([f"{term}"  for term in term_negative])      
+        error_message += f"] which have a total negative order {min_order}. Something on your definition is maybe wrong. Otherwise, consider redefining the unperturbed Hamiltonian."
+        raise ValueError(error_message)
+
+    is_integer_order = orders.astype(int) - orders
+
+    if not np_all(is_integer_order == 0):
+        error_message = f"The Hamiltonian contains terms whose total perturbative order is not an integer: "
+        non_integer_orders = orders[is_integer_order != 0]
+        for order in non_integer_orders:
+            term_non_integer = [Mul(*terms['other']) for terms in expr_ordered_dict[order]]
+            error_message += f"\nThe terms {term_non_integer} have a total order {order}."
+        raise ValueError(error_message)
 
     result : dict[Expression] = {}
 
