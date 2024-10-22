@@ -457,13 +457,16 @@ class EffectiveFrame:
             self.__H_matrix_form = self.__prepare_result(self.__H_final, return_form)
             self.H = self.__H_matrix_form
 
-        elif return_form == 'dict':
-            if hasattr(self, '_EffectiveFrame__H_dict_form'):
-                return self.__H_dict_form
+        elif 'dict' in return_form:
+            extra = return_form.split('_')[1] if '_' in return_form else 'operator'
+            if hasattr(self, '_EffectiveFrame__H_dict_form') and self.__H_dict_form.get(extra) is not None:
+                return self.__H_dict_form[extra]
             
-            self.__H_dict_form = self.__prepare_result(self.__H_final, return_form)
-            self.H = self.__H_dict_form
-        
+            self.__H_dict_form = {}
+            self.__H_dict_form[extra] = self.__prepare_result(self.__H_final, return_form)
+            self.H = self.__H_dict_form[extra]
+        else:
+            raise ValueError('Invalid return form. Please choose either: ' + ', '.join(['operator', 'matrix', 'dict', 'dict_operator', 'dict_matrix']))
         return self.H
     
     def rotate(self, expr, max_order=None, return_form=True):
