@@ -54,7 +54,8 @@ from numpy import (any as np_any, all as np_all, array as np_array,
                    zeros as np_zeros)
 from sympy import (Expr, Mul, Add, Pow, Symbol, eye, kronecker_product, latex,
                    zeros as sp_zeros, sqrt as sp_sqrt, diag as sp_diag)
-from sympy.core.numbers import (Float, Half, ImaginaryUnit, Integer, One, Rational, Pi)
+from sympy.core.numbers import (
+    Float, Half, ImaginaryUnit, Integer, One, Rational, Pi)
 from sympy.physics.quantum import Dagger, Operator
 from sympy.physics.quantum.boson import BosonOp
 
@@ -69,16 +70,17 @@ from .classes import MulGroup, RDSymbol, RDOperator, Expression
 ---------------------------------------------------------------------------------------------------------------------------------------
 '''
 
+
 @multimethod
 def get_order(factor: RDOperator):
     """
     Determines the order of a quantum operator.
-    
+
     Parameters
     ----------
     factor : RDOperator
         The quantum operator to evaluate.
-    
+
     Returns
     -------
     tuple
@@ -86,34 +88,37 @@ def get_order(factor: RDOperator):
     """
     return 0, ('finite', None)
 
+
 @multimethod
 def get_order(factor: BosonOp):
     """
     Determines the order of a bosonic operator.
-    
+
     Parameters
     ----------
     factor : BosonOp
         The bosonic operator to evaluate.
-    
+
     Returns
     -------
     tuple
         The order and the classification ('infinite') with its associated key.
     """
-    key = Dagger(factor)*factor if factor.is_annihilation else factor * Dagger(factor)
+    key = Dagger(factor) * \
+        factor if factor.is_annihilation else factor * Dagger(factor)
     return 0, ('infinite', key)
+
 
 @multimethod
 def get_order(factor: Union[int, float, complex, Integer, Float, ImaginaryUnit, One, Half, Rational, Pi]):
     """
     Determines the order of basic numeric types.
-    
+
     Parameters
     ----------
     factor : Union[int, float, complex, etc.]
         A numeric factor.
-    
+
     Returns
     -------
     tuple
@@ -121,36 +126,37 @@ def get_order(factor: Union[int, float, complex, Integer, Float, ImaginaryUnit, 
     """
     return 0, ('other', None)
 
+
 @multimethod
 def get_order(factor: Pow):
     """
     Determines the order of a power expression.
-    
+
     Parameters
     ----------
     factor : Pow
         A power expression to evaluate.
-    
+
     Returns
     -------
     tuple
         The order and its classification.
     """
     base_order, (o_type, o_key) = get_order(factor.base)
-    
+
     return base_order * factor.exp, (o_type, o_key)
-    
+
 
 @multimethod
 def get_order(factor: Symbol):
     """
     Determines the order of a symbolic variable.
-    
+
     Parameters
     ----------
     factor : Symbol
         The symbolic variable to evaluate.
-    
+
     Returns
     -------
     tuple
@@ -160,16 +166,17 @@ def get_order(factor: Symbol):
         return factor.order, ('other', None)
     return 0, ('other', None)
 
+
 @multimethod
 def get_order(expr: Expr):
     """
     Determines the order of an expression.
-    
+
     Parameters
     ----------
     expr : Expr
         The expression to evaluate.
-    
+
     Returns
     -------
     tuple
@@ -177,28 +184,30 @@ def get_order(expr: Expr):
     """
     ops = list(expr.atoms(BosonOp) | expr.atoms(RDOperator))
     if len(ops) > 0:
-        raise ValueError(f"The Hamiltonian contains non-integer or non-positive powers of the operators {ops}.")
-    
+        raise ValueError(
+            f"The Hamiltonian contains non-integer or non-positive powers of the operators {ops}.")
+
     if isinstance(expr, Mul):
         return sum([get_order(op)[0] for op in expr.args]), ('other', None)
-    
+
     if isinstance(expr, Add):
         orders = set([get_order(op)[0] for op in expr.args])
         if len(orders) > 1:
-            raise ValueError(f"The Hamiltonian contains non-integer or non-positive powers of the sum of terms with different orders: {orders}. Thus, the order of {expr} is ambiguous.")
-        
+            raise ValueError(
+                f"The Hamiltonian contains non-integer or non-positive powers of the sum of terms with different orders: {orders}. Thus, the order of {expr} is ambiguous.")
+
         return orders.pop(), ('other', None)
-        
+
 
 def group_by_order(expr):
     """
     Groups terms in an expression by their order, separating finite and infinite terms.
-    
+
     Parameters
     ----------
     expr : Expr
         The expression to group.
-    
+
     Returns
     -------
     dict
@@ -207,22 +216,29 @@ def group_by_order(expr):
         {order: [{'other': [other_factors], 'finite': [finite_operators], 'infinite': {infinite_operators}}, ...]}
 
     """
-    terms = expr.expand().as_ordered_terms()        # Expand and get ordered terms from the expression to group
-    result = {} 
+    terms = expr.expand().as_ordered_terms(
+    )        # Expand and get ordered terms from the expression to group
+    result = {}
     for term in terms:                            # Iterate over the terms to group them by order
         order = 0                              # Initialize the order for the current term
         factors = term.as_ordered_factors()   # Get the factors of the term
-        result_dict = {'other': [], 'finite': [], 'infinite': {}}   # Initialize the result dictionary. Finite contains the finite operators, infinite contains the infinite operators and other contains the rest of the factors.
+        # Initialize the result dictionary. Finite contains the finite operators, infinite contains the infinite operators and other contains the rest of the factors.
+        result_dict = {'other': [], 'finite': [], 'infinite': {}}
         for factor in factors:
-            factor_order, (factor_type, factor_key) = get_order(factor)  # Get the order and classification of the factor
+            factor_order, (factor_type, factor_key) = get_order(
+                factor)  # Get the order and classification of the factor
             order += factor_order   # Add the factor order to the current term order
             if factor_type == 'infinite':   # If the factor is infinite, add it to the infinite dictionary
-                result_dict[factor_type][factor_key] = result_dict[factor_type].get(factor_key, []) + [factor]  # Add the factor to the corresponding key
+                result_dict[factor_type][factor_key] = result_dict[factor_type].get(
+                    factor_key, []) + [factor]  # Add the factor to the corresponding key
                 continue
-            result_dict[factor_type].append(factor) # Add the factor to the corresponding type
+            # Add the factor to the corresponding type
+            result_dict[factor_type].append(factor)
 
-        result[order] = result.get(order, []) + [result_dict]   # Add the term to the corresponding order in the result dictionary
+        # Add the term to the corresponding order in the result dictionary
+        result[order] = result.get(order, []) + [result_dict]
     return result
+
 
 '''
 ---------------------------------------------------------------------------------------------------------------------------------------
@@ -232,16 +248,17 @@ def group_by_order(expr):
 ---------------------------------------------------------------------------------------------------------------------------------------                                                        
 '''
 
+
 @multimethod
 def get_count_boson(factor: BosonOp):
     """
     Returns the count of bosons for a given bosonic operator.
-    
+
     Parameters
     ----------
     factor : BosonOp
         The bosonic operator.
-    
+
     Returns
     -------
     int
@@ -249,16 +266,17 @@ def get_count_boson(factor: BosonOp):
     """
     return (-1)**factor.is_annihilation
 
+
 @multimethod
 def get_count_boson(factor: Pow):
     """
     Returns the boson count for a power of a bosonic operator.
-    
+
     Parameters
     ----------
     factor : Pow
         A power expression of a bosonic operator.
-    
+
     Returns
     -------
     int
@@ -266,16 +284,17 @@ def get_count_boson(factor: Pow):
     """
     return get_count_boson(factor.base) * factor.exp
 
+
 @multimethod
 def get_count_boson(factor: One):
     """
     Returns zero boson count for a trivial factor.
-    
+
     Parameters
     ----------
     factor : One
         The trivial factor.
-    
+
     Returns
     -------
     int
@@ -283,18 +302,19 @@ def get_count_boson(factor: One):
     """
     return 0
 
-def count_bosons(factors:dict, structure={}):
+
+def count_bosons(factors: dict, structure={}):
     """
     Counts the number of bosons in a given set of factors.
-    
+
     Parameters
     ----------
     factors : dict
         A dictionary of factors grouped by subspace.
-    
+
     structure : dict, optional
         A dictionary mapping subspaces to indices (default is an empty dictionary).
-    
+
     Returns
     -------
     ndarray
@@ -302,21 +322,22 @@ def count_bosons(factors:dict, structure={}):
     """
     result = np_zeros(len(structure))
     for subspace, operators in factors.items():
-        # It can be optimized 
+        # It can be optimized
         # factors = {subspace: [factor1, factor2, ...]}
         for operator in operators:
             result[structure[subspace]] += get_count_boson(operator)
     return result
 
+
 def count_bosonic_subspaces(H):
     """
     Counts the number of distinct bosonic subspaces in a Hamiltonian.
-    
+
     Parameters
     ----------
     H : Expr
         The Hamiltonian expression.
-    
+
     Returns
     -------
     dict
@@ -325,12 +346,14 @@ def count_bosonic_subspaces(H):
     count = 0
     structure = {}
     for a in H.atoms(BosonOp):
-        key = Dagger(a)*a if a.is_annihilation else a * Dagger(a)   # Get the key for the bosonic operator
+        key = Dagger(a)*a if a.is_annihilation else a * \
+            Dagger(a)   # Get the key for the bosonic operator
         if key in structure:    # If the key is already in the structure, continue
             continue
-        structure[key] = count  # Add the key to the structure with the current count
+        # Add the key to the structure with the current count
+        structure[key] = count
         count += 1  # Increment the count
-    
+
     # The structure is a dictionary with the keys being the bosonic operators and the values being the corresponding indices for a unique subspace.
     return structure
 
@@ -343,7 +366,8 @@ def count_bosonic_subspaces(H):
 ---------------------------------------------------------------------------------------------------------------------------------------                                                        
 '''
 
-def domain_expansion(term:dict, structure={}, subspaces=None):
+
+def domain_expansion(term: dict, structure={}, subspaces=None):
     """
     Returns a corresponding MulGroup for a given term.
 
@@ -361,33 +385,48 @@ def domain_expansion(term:dict, structure={}, subspaces=None):
     tuple
         A tuple containing the resulting MulGroup and a boolean indicating if is diagonal.
     """
-    
-    delta = count_bosons(term['infinite'], structure) if structure != {} else np_array([0])                                     # Count the bosons in the infinite part if there is no structure, return 0 (Diagonal operator on the infinite part)
-    is_infinite_diagonal = np_all(delta == 0)                                                                            # Check if the infinite part is diagonal
-    infinite_operators_array = np_ones(len(structure), dtype=object) if structure != {} else np_array([1])                # Create an array of ones with the length of the structure if there is a structure, otherwise return 1 (Identity operator on the infinite part)
-    
-    for number_op, operators in term['infinite'].items():                                                              # Iterate over the infinite operators
-        infinite_operators_array[structure[number_op]] = Mul(*operators)                                          # Add the operator to the corresponding index in the infinite operators array
 
-    Ns = np_array(list(structure.keys()))                                                                            # Get the keys of the structure as an array
+    # Count the bosons in the infinite part if there is no structure, return 0 (Diagonal operator on the infinite part)
+    delta = count_bosons(term['infinite'], structure) if structure != {
+    } else np_array([0])
+    # Check if the infinite part is diagonal
+    is_infinite_diagonal = np_all(delta == 0)
+    # Create an array of ones with the length of the structure if there is a structure, otherwise return 1 (Identity operator on the infinite part)
+    infinite_operators_array = np_ones(
+        len(structure), dtype=object) if structure != {} else np_array([1])
+
+    # Iterate over the infinite operators
+    for number_op, operators in term['infinite'].items():
+        # Add the operator to the corresponding index in the infinite operators array
+        infinite_operators_array[structure[number_op]] = Mul(*operators)
+
+    # Get the keys of the structure as an array
+    Ns = np_array(list(structure.keys()))
 
     if not subspaces:
-        return MulGroup(Mul(*term['other']), infinite_operators_array, delta, Ns), is_infinite_diagonal                  # Return the MulGroup with the other factors, infinite operators, boson count, and subspaces
+        # Return the MulGroup with the other factors, infinite operators, boson count, and subspaces
+        return MulGroup(Mul(*term['other']), infinite_operators_array, delta, Ns), is_infinite_diagonal
 
-    finite_operators = {subspace.name : eye(subspace.dim) for subspace in subspaces}                              # Create a dictionary with the subspaces as keys and the identity matrix as values
-    other_factors = Mul(*term['other'])                                                                             # Get the other factors of the term
+    # Create a dictionary with the subspaces as keys and the identity matrix as values
+    finite_operators = {subspace.name: eye(
+        subspace.dim) for subspace in subspaces}
+    # Get the other factors of the term
+    other_factors = Mul(*term['other'])
 
     for operator in term['finite']:
-        subspace = operator.subspace                                                                               # Get the subspace of the operator
-        finite_operators[subspace] = operator.matrix                                                            # Add the operator matrix to the corresponding subspace in the finite operators dictionary
+        # Get the subspace of the operator
+        subspace = operator.subspace
+        # Add the operator matrix to the corresponding subspace in the finite operators dictionary
+        finite_operators[subspace] = operator.matrix
 
-    finite_matrix = kronecker_product(*list(finite_operators.values()))                                          # Create the finite matrix by taking the kronecker product of the finite operators
-    is_finite_diagonal = finite_matrix.is_diagonal()                                                          # Check if the finite matrix is diagonal
-
+    # Create the finite matrix by taking the kronecker product of the finite operators
+    finite_matrix = kronecker_product(*list(finite_operators.values()))
+    # Check if the finite matrix is diagonal
+    is_finite_diagonal = finite_matrix.is_diagonal()
 
     return MulGroup(other_factors * finite_matrix, infinite_operators_array, delta, Ns), is_infinite_diagonal and is_finite_diagonal
 
-    
+
 '''
 ---------------------------------------------------------------------------------------------------------------------------------------
                                                 APPLY COMMUTATION RELATIONS
@@ -399,7 +438,8 @@ def domain_expansion(term:dict, structure={}, subspaces=None):
 ---------------------------------------------------------------------------------------------------------------------------------------                                                        
 '''
 
-def apply_substituitions(expr:Expression, subs:dict):
+
+def apply_substituitions(expr: Expression, subs: dict):
     """
     Applies commutation relations to the infinite part of a given expression.
 
@@ -422,27 +462,38 @@ def apply_substituitions(expr:Expression, subs:dict):
         inf = group.inf                            # Get the infinite part of the MulGroup
         fn = group.fn                           # Get the function of the MulGroup
         delta = group.delta                    # Get the boson count of the MulGroup
-        inf_new = np_vectorize(lambda x: x.subs(subs).expand() if isinstance(x, Expr) else x, otypes=[object])(inf)    # Apply the commutation relations to the infinite part
+        inf_new = np_vectorize(lambda x: x.subs(subs).expand() if isinstance(x, Expr) else x, otypes=[
+                               # Apply the commutation relations to the infinite part
+                               object])(inf)
 
         while np_any(inf_new != inf):
             # Can we optimize this?
             inf = inf_new
-            inf_new = np_vectorize(lambda x: x.subs(subs).expand() if isinstance(x, Expr) else x, otypes=[object])(inf)    # Apply the commutation relations to the infinite part
+            inf_new = np_vectorize(lambda x: x.subs(subs).expand() if isinstance(x, Expr) else x, otypes=[
+                                   # Apply the commutation relations to the infinite part
+                                   object])(inf)
 
-        inf_terms = np_vectorize(lambda x: x.as_ordered_terms() if isinstance(x, Expr) else [x], otypes=[np_ndarray])(inf)  # Get the terms of the infinite part
-        product_terms = product(*inf_terms) # Get the product of the terms
-        
+        inf_terms = np_vectorize(lambda x: x.as_ordered_terms() if isinstance(
+            # Get the terms of the infinite part
+            x, Expr) else [x], otypes=[np_ndarray])(inf)
+        product_terms = product(*inf_terms)  # Get the product of the terms
+
         for new_inf in product_terms:
-            coeff_inf_array = np_vectorize(lambda x: list(x.as_coeff_Mul()) if isinstance(x, Expr) else [x, 1], otypes=[object])(new_inf)   # Get the coefficient and the term of the infinite part
-            coeff = Mul(*[coeff for coeff, _ in coeff_inf_array])   # Get the coefficient of the infinite part
-            inf = np_array([term for _, term in coeff_inf_array])   # Get the term of the infinite part
+            coeff_inf_array = np_vectorize(lambda x: list(x.as_coeff_Mul()) if isinstance(x, Expr) else [
+                                           # Get the coefficient and the term of the infinite part
+                                           x, 1], otypes=[object])(new_inf)
+            # Get the coefficient of the infinite part
+            coeff = Mul(*[coeff for coeff, _ in coeff_inf_array])
+            # Get the term of the infinite part
+            inf = np_array([term for _, term in coeff_inf_array])
 
-            result += MulGroup(fn * coeff, inf, delta, group.Ns)    # Add the new MulGroup to the result
+            # Add the new MulGroup to the result
+            result += MulGroup(fn * coeff, inf, delta, group.Ns)
 
     return result
 
 
-def apply_commutation_relations(expr:Expression, commutation_relations:dict):
+def apply_commutation_relations(expr: Expression, commutation_relations: dict):
     """
     Applies commutation relations to the infinite part of a given expression.
 
@@ -460,7 +511,8 @@ def apply_commutation_relations(expr:Expression, commutation_relations:dict):
     """
     return apply_substituitions(expr, commutation_relations)
 
-def extract_ns(expr:Expression, structure:dict):
+
+def extract_ns(expr: Expression, structure: dict):
     """
     Extracts the subspaces from the infinite part of a given expression.
 
@@ -475,15 +527,16 @@ def extract_ns(expr:Expression, structure:dict):
         A new expression with the subspaces extracted.
     """
 
-    if structure  == {}:
-        return expr
+    if structure == {}:
+        return expr, {}
 
     Ns = np_array(list(structure.keys()))
     Ads, As = np_array([N.as_ordered_factors() for N in Ns]).T
 
-    ns_comm = dict(zip(Ads**2 * As, (Ns - 1) * Ads ))
+    ns_comm = dict(zip(Ads**2 * As, (Ns - 1) * Ads))
 
     return apply_substituitions(expr, ns_comm), ns_comm
+
 
 '''
 ---------------------------------------------------------------------------------------------------------------------------------------
@@ -492,7 +545,9 @@ def extract_ns(expr:Expression, structure:dict):
         [ ] This can be parallelized over the terms.
 ---------------------------------------------------------------------------------------------------------------------------------------
 '''
-def separate_diagonal_off_diagonal(expr:Expression):
+
+
+def separate_diagonal_off_diagonal(expr: Expression):
     """
     Separates diagonal and off-diagonal terms in the given expression.
 
@@ -509,18 +564,21 @@ def separate_diagonal_off_diagonal(expr:Expression):
     mul_groups = expr.expr
     if len(mul_groups) == 0:
         return Expression(), Expression()
-    
-    deltas = np_all(np_array([group.delta for group in mul_groups]) == 0, axis=1)
+
+    deltas = np_all(
+        np_array([group.delta for group in mul_groups]) == 0, axis=1)
 
     diagonal_expr = Expression()
     not_diagonal_expr = Expression(mul_groups[np_logical_not(deltas)])
 
     for group in mul_groups[deltas]:
-        diagonal_fn = sp_diag(*group.fn.diagonal())         
+        diagonal_fn = sp_diag(*group.fn.diagonal())
         off_diagonal_fn = group.fn - diagonal_fn
 
-        diagonal_expr += MulGroup(diagonal_fn, group.inf, group.delta, group.Ns)
-        not_diagonal_expr += MulGroup(off_diagonal_fn, group.inf, group.delta, group.Ns)
+        diagonal_expr += MulGroup(diagonal_fn, group.inf,
+                                  group.delta, group.Ns)
+        not_diagonal_expr += MulGroup(off_diagonal_fn,
+                                      group.inf, group.delta, group.Ns)
 
     return not_diagonal_expr, diagonal_expr
 
@@ -533,6 +591,7 @@ def separate_diagonal_off_diagonal(expr:Expression):
 ---------------------------------------------------------------------------------------------------------------------------------------
 '''
 
+
 class memoized(object):
     """
     A decorator class for memoization of function results to improve performance by caching outputs.
@@ -544,6 +603,7 @@ class memoized(object):
     cache : dict
         A cache dictionary to store computed results.
     """
+
     def __init__(self, func):
         self.func = func
         self.cache = {}
@@ -569,6 +629,7 @@ class memoized(object):
             self.cache[args] = value
             return value
 
+
 def partitions(n):
     """
     Generates all partitions of the integer n.
@@ -587,15 +648,17 @@ def partitions(n):
     # Base case: if n is 0, return a single partition containing only (0,)
     if n == 0:
         return [(0,)]
-    
-    parts = [(n,)]                      # Start with the partition of n as a single tuple
+
+    # Start with the partition of n as a single tuple
+    parts = [(n,)]
     for i in range(1, n + 1):           # Start from 1 to avoid infinite recursion with zero
         for p in partitions(n - i):
             parts.append(p + (i,))
-    
+
     return parts
 
-def commutator(A:Union[MulGroup, Expression], B:Union[MulGroup, Expression]) -> Expression:
+
+def commutator(A: Union[MulGroup, Expression], B: Union[MulGroup, Expression]) -> Expression:
     """
     Computes the commutator of two operators A and B.
 
@@ -624,7 +687,8 @@ def display_dict(dictionary):
         A dictionary with keys and values to be displayed.
     """
     for key, value in dictionary.items():
-        display(Math(f"{latex(key)} : {latex(value)}"))
+        display(Math(f"{latex(key.simplify())} : {latex(value)}"))
+
 
 def group_by_operators(expr):
     """
@@ -647,7 +711,7 @@ def group_by_operators(expr):
     terms = expr.as_ordered_terms()
     factors_of_terms = [term.as_ordered_factors() for term in terms]
 
-    has_op = lambda o: any([o.has(op) for op in operators])
+    def has_op(o): return any([o.has(op) for op in operators])
 
     for term in factors_of_terms:
         result_term = 1
@@ -664,10 +728,13 @@ def group_by_operators(expr):
                 result_term *= factor
                 continue
             result_coeff *= factor
-        result_term = result_term.simplify() if isinstance(result_term, Mul) else result_term
-        result_dict[result_term] = result_dict.get(result_term, 0) + result_coeff
-    
+        result_term = result_term.simplify() if isinstance(
+            result_term, Mul) else result_term
+        result_dict[result_term] = result_dict.get(
+            result_term, 0) + result_coeff
+
     return result_dict
+
 
 def get_perturbative_expression(expr, structure, subspaces=None):
     """
@@ -692,9 +759,10 @@ def get_perturbative_expression(expr, structure, subspaces=None):
 
     min_order = min(orders)
     if min_order < 0:
-        term_negative = [Mul(*terms['other']) for terms in expr_ordered_dict[min_order]]
+        term_negative = [Mul(*terms['other'])
+                         for terms in expr_ordered_dict[min_order]]
         error_message = f"The expression contains the terms ["
-        error_message += ", ".join([f"{term}"  for term in term_negative])      
+        error_message += ", ".join([f"{term}" for term in term_negative])
         error_message += f"] which have a total negative order {min_order}. Something on your definition is maybe wrong. Otherwise, consider redefining the unperturbed Hamiltonian."
         raise ValueError(error_message)
 
@@ -704,19 +772,20 @@ def get_perturbative_expression(expr, structure, subspaces=None):
         error_message = f"The Hamiltonian contains terms whose total perturbative order is not an integer: "
         non_integer_orders = orders[is_integer_order != 0]
         for order in non_integer_orders:
-            term_non_integer = [Mul(*terms['other']) for terms in expr_ordered_dict[order]]
+            term_non_integer = [Mul(*terms['other'])
+                                for terms in expr_ordered_dict[order]]
             error_message += f"\nThe terms {term_non_integer} have a total order {order}."
         raise ValueError(error_message)
 
-    result : dict[Expression] = {}
-
+    result: dict[Expression] = {}
     for order in expr_ordered_dict:
         for term in expr_ordered_dict[order]:
-            mul_group_term, is_diagonal = domain_expansion(term, structure, subspaces)
-            result[order] = (result.get(order, Expression()) + mul_group_term).simplify()
+            mul_group_term, is_diagonal = domain_expansion(
+                term, structure, subspaces)
+            result[order] = (result.get(order, Expression()) +
+                             mul_group_term).simplify()
 
     return result
-
 
 
 '''
@@ -726,6 +795,7 @@ def get_perturbative_expression(expr, structure, subspaces=None):
     - This function is deprecated and should be removed if not used.
 ---------------------------------------------------------------------------------------------------------------------------------------
 '''
+
 
 def get_boson_matrix(is_annihilation, dim):
     """
@@ -751,31 +821,35 @@ def get_boson_matrix(is_annihilation, dim):
 
     for i in range(1, dim):
         matrix[i, i-1] = sp_sqrt(i)
-    
+
     return matrix
 
 
-@ multimethod
+@multimethod
 def get_matrix(H: RDOperator, list_subspaces):
     return kronecker_product(*[H.matrix if H.subspace == subspace else eye(dim) for subspace, dim in list_subspaces])
 
-@ multimethod
+
+@multimethod
 def get_matrix(H: BosonOp, list_subspaces):
     # list_subspaces : [[subspace, dim], ...]
 
     return kronecker_product(*[get_boson_matrix(H.is_annihilation, dim) if H.name == subspace else eye(dim) for subspace, dim in list_subspaces])
 
-@ multimethod
+
+@multimethod
 def get_matrix(H: Union[Symbol, RDSymbol, int, float, complex, Integer, Float, ImaginaryUnit, One, Half, Rational, Pi], list_subspaces):
 
     return H * kronecker_product(*[eye(dim) for subspace, dim in list_subspaces])
+
 
 @multimethod
 def get_matrix(H: Pow, list_subspaces):
     base, exp = H.as_base_exp()
     return get_matrix(base, list_subspaces) ** exp
 
-@ multimethod
+
+@multimethod
 def get_matrix(H: Expr, list_subspaces):
     # list_subspaces : [[subspace, dim], ...]
     H = H.expand()
