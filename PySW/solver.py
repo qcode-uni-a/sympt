@@ -481,10 +481,14 @@ class EffectiveFrame:
             The resulting operator in the chosen form. If `return_form` is True, it returns an operator expression.
             If False, it returns the matrix form of the operator.
         """
-        if self.subspaces is not None and return_form == 'operator':
-            O_final_projected = np_sum([self.__composite_basis.project(mul_group.fn) * Mul(
-                *mul_group.inf).simplify() for mul_group in tqdm(O_final.expr, desc='Projecting to operator form')])
+        if return_form == 'operator':
+            if self.subspaces is not None:
+                O_final_projected = np_sum([self.__composite_basis.project(mul_group.fn) * Mul(
+                    *mul_group.inf).simplify() for mul_group in tqdm(O_final.expr, desc='Projecting to operator form')])
 
+                return O_final_projected
+            O_final_projected = np_sum([mul_group.fn[0] * Mul(
+                *mul_group.inf).simplify() for mul_group in tqdm(O_final.expr, desc='Projecting to operator form')])
             return O_final_projected
 
         elif return_form == 'matrix':
@@ -506,9 +510,13 @@ class EffectiveFrame:
                 O_dict_form = {}
 
                 if extra == 'operator':
-                    for mul_group in tqdm(O_final.expr, desc='Converting to dictionary (operator) form'):
-                        O_dict_form[Mul(
-                            *mul_group.inf)] = self.__composite_basis.project(mul_group.fn)
+                    if self.subspaces is not None:
+                        for mul_group in tqdm(O_final.expr, desc='Converting to dictionary (operator) form'):
+                            O_dict_form[Mul(
+                                *mul_group.inf)] = self.__composite_basis.project(mul_group.fn)
+                    else:
+                        for mul_group in tqdm(O_final.expr, desc='Converting to dictionary (operator) form'):
+                            O_dict_form[Mul(*mul_group.inf)] = mul_group.fn[0]
                         
                 elif extra == 'matrix':
                     for mul_group in tqdm(O_final.expr, desc='Converting to dictionary (matrix) form'):
@@ -516,7 +524,7 @@ class EffectiveFrame:
 
                 return O_dict_form
 
-            raise ValueError('Invalid return form. Please choose either: ' + ', '.join(
+            raise ValueError(f'Invalid return form {return_form}. Please choose either: ' + ', '.join(
                 ['operator', 'matrix', 'dict', 'dict_operator', 'dict_matrix']))
 
     def get_H(self, return_form=None):
