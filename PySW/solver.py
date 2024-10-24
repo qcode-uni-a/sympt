@@ -194,6 +194,8 @@ class EffectiveFrame:
         if hasattr(self, 'commutation_relations'):
             return self.commutation_relations
         Ns = np_array(list(self.__structure.keys()))
+        if Ns.shape[0] == 0:
+            return {}
         keys = np_vectorize(lambda x: Mul(
             *(x.as_ordered_factors()[::-1])))(Ns)  # a*ad
 
