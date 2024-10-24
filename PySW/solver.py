@@ -485,7 +485,7 @@ class EffectiveFrame:
                 finite_subspace = RDBasis('f', self.H_input.shape[0])
                 self.subspaces = [finite_subspace]
                 self.__composite_basis = RDCompositeBasis(self.subspaces)
-            if hasattr(self, '_EffectiveFrame__composite_basis') and self.subspaces is not None:
+            if not hasattr(self, '_EffectiveFrame__composite_basis') and self.subspaces is not None:
                 self.__composite_basis = RDCompositeBasis(self.subspaces)
 
             if self.subspaces is not None:
