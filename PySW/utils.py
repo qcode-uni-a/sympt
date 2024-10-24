@@ -51,8 +51,8 @@ from multimethod import multimethod
 from numpy import (any as np_any, all as np_all, array as np_array,
                    ndarray as np_ndarray, logical_not as np_logical_not,
                    ones as np_ones, vectorize as np_vectorize,
-                   zeros as np_zeros)
-from sympy import (Expr, Mul, Add, Pow, Symbol, eye, kronecker_product, latex,
+                   zeros as np_zeros, nonzero as np_nonzero)
+from sympy import (Expr, Mul, Add, Pow, Symbol, Matrix, eye, kronecker_product, latex,
                    zeros as sp_zeros, sqrt as sp_sqrt, diag as sp_diag)
 from sympy.core.numbers import (
     Float, Half, ImaginaryUnit, Integer, One, Rational, Pi)
@@ -199,7 +199,37 @@ def get_order(expr: Expr):
         return orders.pop(), ('other', None)
 
 
-def group_by_order(expr):
+@multimethod
+def group_by_order(expr:Matrix):
+    """
+    Groups terms in a matrix by their order, separating finite and infinite terms.
+
+    Parameters
+    ----------
+    expr : Matrix
+        The matrix to group.
+
+    Returns
+    -------
+    dict
+        A dictionary mapping orders to terms in the matrix.
+
+        {order: [{'other': [other_factors], 'finite': [finite_operators], 'infinite': {infinite_operators}}, ...]}
+    """
+    result = {}
+    expr_non_zeros = np_nonzero(expr)
+    for i, j in zip(*expr_non_zeros):
+        projector = Matrix.zeros(expr.rows, expr.cols)
+        projector[i, j] = 1
+        terms = group_by_order(expr[i, j])
+        for order, term in terms.items():
+            for factor in term:
+                factor['other'].append(projector)
+            result[order] = result.get(order, []) + term
+    return result
+
+@multimethod
+def group_by_order(expr:Expr):
     """
     Groups terms in an expression by their order, separating finite and infinite terms.
 
@@ -754,6 +784,8 @@ def get_perturbative_expression(expr, structure, subspaces=None):
     dict
         A dictionary mapping orders to their corresponding simplified expressions.
     """
+    if isinstance(expr, Matrix):
+        subspaces = None
     expr_ordered_dict = group_by_order(expr)
     orders = np_array(list(expr_ordered_dict.keys()))
 

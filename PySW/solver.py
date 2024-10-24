@@ -55,7 +55,6 @@ from .utils import *
 # Third-party imports
 from tqdm import tqdm, trange
 from tabulate import tabulate
-from numpy import nonzero as np_nonzero
 from sympy import (Rational as sp_Rational, factorial as sp_factorial,
                    nsimplify as sp_nsimplify, simplify as sp_simplify,
                    UnevaluatedExpr)
@@ -213,6 +212,7 @@ class EffectiveFrame:
                 'Subspaces must be provided when the Hamiltonian contains RDOperator objects.')
 
         if isinstance(self.H_input, Matrix):
+            print('Creating the EffectiveFrame object with matrix form.')
             if self.V_input is not None and not isinstance(self.V_input, Matrix):
                 raise ValueError('The type of V and H must be the same.')
 
@@ -221,20 +221,12 @@ class EffectiveFrame:
 
             if self.subspaces is None:
                 self.__return_form = 'matrix'
-                finite_subspace = RDBasis('f', self.H_input.shape[0])
-                self.subspaces = [finite_subspace]
-            self.__composite_basis = RDCompositeBasis(self.subspaces)
+                return
 
-            if self.__composite_basis.dim != self.H_input.shape[0]:
+            total_dim = Mul(*[subspace.dim for subspace in self.subspaces])
+            if total_dim != self.H_input.shape[0]:
                 raise ValueError(
                     f'The dimension of the finite subspace {self.__composite_basis.dim} must be the same as the Hamiltonian {self.H_input.shape[0]}.')
-
-            self.H_input = self.__composite_basis.project(self.H_input)
-            if self.V_input is not None:
-                self.V_input = self.__composite_basis.project(self.V_input)
-
-        self.__composite_basis = RDCompositeBasis(
-            self.subspaces) if self.subspaces is not None else None
 
     def __checks_solver(self, do_regular_SW, full_diagonalization, mask):
 
@@ -488,6 +480,14 @@ class EffectiveFrame:
             If False, it returns the matrix form of the operator.
         """
         if return_form == 'operator':
+            if self.subspaces is None and O_final.expr[0].fn.shape[0] > 1:
+                print('Subspaces were not provided. Creating a finite subspace with the same dimension as the Hamiltonian.')
+                finite_subspace = RDBasis('f', self.H_input.shape[0])
+                self.subspaces = [finite_subspace]
+                self.__composite_basis = RDCompositeBasis(self.subspaces)
+            if hasattr(self, '_EffectiveFrame__composite_basis') and self.subspaces is not None:
+                self.__composite_basis = RDCompositeBasis(self.subspaces)
+
             if self.subspaces is not None:
                 O_final_projected = np_sum([self.__composite_basis.project(mul_group.fn) * Mul(
                     *mul_group.inf).simplify() for mul_group in tqdm(O_final.expr, desc='Projecting to operator form')])
@@ -648,8 +648,13 @@ class EffectiveFrame:
         information = '\nEffective Frame\n\n'
 
         subspaces_headers = [['Name', 'Type', 'Dimension']]
+
         subspaces_finite = [[subspace.name, 'Finite', f'{subspace.dim}x{subspace.dim}']
                             for subspace in self.subspaces if subspace.name != 'finite_pysw_built_in_function'] if self.subspaces is not None else []
+        
+        if self.__return_form == 'matrix' and self.subspaces is None:
+            subspaces_finite = [['Finite', 'Finite', f'{self.H_input.shape[0]}x{self.H_input.shape[0]}']]
+
         subspaces_infinite = [[subspace.as_ordered_factors(
         )[1].name, 'Bosonic', '∞'] for subspace in self.__structure.keys()]
 
