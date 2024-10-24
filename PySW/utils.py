@@ -567,14 +567,14 @@ def separate_diagonal_off_diagonal(expr: Expression):
 
     deltas = np_all(
         np_array([group.delta for group in mul_groups]) == 0, axis=1)
-
+    
     diagonal_expr = Expression()
     not_diagonal_expr = Expression(mul_groups[np_logical_not(deltas)])
 
     for group in mul_groups[deltas]:
         diagonal_fn = sp_diag(*group.fn.diagonal())
-        off_diagonal_fn = group.fn - diagonal_fn
-
+        off_diagonal_fn = (group.fn - diagonal_fn).expand()
+        
         diagonal_expr += MulGroup(diagonal_fn, group.inf,
                                   group.delta, group.Ns)
         not_diagonal_expr += MulGroup(off_diagonal_fn,

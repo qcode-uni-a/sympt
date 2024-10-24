@@ -101,7 +101,7 @@ def Denominator(H0_expr, uu, vv, Delta):
         E_nu = Epsilon_j[vv, vv]
         E += sp_nsimplify((E_mu * Mul(*(Ns**js)).simplify() -
                           E_nu * Mul(*((Ns - Delta)**js)).simplify()))
-
+        
     return E.expand().simplify()
 
 
@@ -133,8 +133,11 @@ def get_S(H0_expr, equation_to_solve):
             # This can be optimized by using the fact that the EquationtoSolve is Hermitian and S is anti-Hermitian
             # This is a good candidate for parallelization
             denom = Denominator(H0_expr, uu, vv, Delta)
+            if denom == 0:
+                if uu == vv and Delta == 0:
+                    raise ValueError(f'S contains diagonal elements. If you saw this message, please contact the developers.')
+                raise ValueError(f'You are trying to decouple degenarate states for the finite entry {uu, vv} and Delta {Delta}')
             S_mat[uu, vv] /= denom
-
         S += MulGroup(S_mat, mul_group.inf, mul_group.delta, mul_group.Ns)
     return S
 
@@ -317,7 +320,6 @@ class EffectiveFrame:
         # Apply the commutation relations to the zeroth-order Hamiltonian
         H0_expr = apply_commutation_relations(
         Hs.get(0) + Expression(), self.commutation_relations).simplify()
-
         return Hs, Vs, H0_expr
 
     def solve(self, max_order=2, full_diagonalization=False, mask=None):
@@ -368,6 +370,7 @@ class EffectiveFrame:
 
         # Extract the number operators from  the zeroth-order Hamiltonian
         H0_expr, ns_comms = extract_ns(H0_expr, self.__structure)
+        H0_expr = H0_expr.simplify()
         H_final = H0_expr
 
         # Iterate over the perturbative orders
@@ -430,10 +433,11 @@ class EffectiveFrame:
                 B_k = (apply_commutation_relations(
                     B_k, self.commutation_relations)).simplify()
 
-            # Compute the anti-Hermitian operator S for the perturbative order
-            S_k = (get_S(H0_expr, -B_k)).simplify()
-            # Store the anti-Hermitian operator S for the perturbative order
-            Ss[order] = S_k
+            if order < max_order:
+                # Compute the anti-Hermitian operator S for the perturbative order
+                S_k = (get_S(H0_expr, -B_k)).simplify()
+                # Store the anti-Hermitian operator S for the perturbative order
+                Ss[order] = S_k
             # Apply the commutation relations to the final Hamiltonian
             H_final = (apply_commutation_relations(
                 H_final, self.commutation_relations)).simplify()
