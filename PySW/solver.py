@@ -479,15 +479,19 @@ class EffectiveFrame:
             The resulting operator in the chosen form. If `return_form` is True, it returns an operator expression.
             If False, it returns the matrix form of the operator.
         """
-        if return_form == 'operator':
+
+        if 'operator' in return_form:
             if self.subspaces is None and O_final.expr[0].fn.shape[0] > 1:
                 print('Subspaces were not provided. Creating a finite subspace with the same dimension as the Hamiltonian.')
                 finite_subspace = RDBasis('f', self.H_input.shape[0])
                 self.subspaces = [finite_subspace]
                 self.__composite_basis = RDCompositeBasis(self.subspaces)
+
             if not hasattr(self, '_EffectiveFrame__composite_basis') and self.subspaces is not None:
                 self.__composite_basis = RDCompositeBasis(self.subspaces)
 
+
+        if return_form == 'operator':
             if self.subspaces is not None:
                 O_final_projected = np_sum([self.__composite_basis.project(mul_group.fn) * Mul(
                     *mul_group.inf).simplify() for mul_group in tqdm(O_final.expr, desc='Projecting to operator form')])
@@ -509,29 +513,27 @@ class EffectiveFrame:
 
             return O_matrix_form
         
-        else:
-            return_form, extra = return_form.split(
-                '_') if '_' in return_form else (return_form, 'operator')
-            if return_form == 'dict':
-                O_dict_form = {}
+        elif 'dict' in return_form:
+            return_form, extra = return_form.split('_')
+            O_dict_form = {}
 
-                if extra == 'operator':
-                    if self.subspaces is not None:
-                        for mul_group in tqdm(O_final.expr, desc='Converting to dictionary (operator) form'):
-                            O_dict_form[Mul(
-                                *mul_group.inf)] = self.__composite_basis.project(mul_group.fn)
-                    else:
-                        for mul_group in tqdm(O_final.expr, desc='Converting to dictionary (operator) form'):
-                            O_dict_form[Mul(*mul_group.inf)] = mul_group.fn[0]
-                        
-                elif extra == 'matrix':
-                    for mul_group in tqdm(O_final.expr, desc='Converting to dictionary (matrix) form'):
-                        O_dict_form[Mul(*mul_group.inf)] = mul_group.fn.expand()
+            if extra == 'operator':
+                if self.subspaces is not None:
+                    for mul_group in tqdm(O_final.expr, desc='Converting to dictionary (operator) form'):
+                        O_dict_form[Mul(
+                            *mul_group.inf)] = self.__composite_basis.project(mul_group.fn)
+                else:
+                    for mul_group in tqdm(O_final.expr, desc='Converting to dictionary (operator) form'):
+                        O_dict_form[Mul(*mul_group.inf)] = mul_group.fn[0]
+                    
+            elif extra == 'matrix':
+                for mul_group in tqdm(O_final.expr, desc='Converting to dictionary (matrix) form'):
+                    O_dict_form[Mul(*mul_group.inf)] = mul_group.fn.expand()
 
-                return O_dict_form
+            return O_dict_form
 
-            raise ValueError(f'Invalid return form {return_form}. Please choose either: ' + ', '.join(
-                ['operator', 'matrix', 'dict', 'dict_operator', 'dict_matrix']))
+        raise ValueError(f'Invalid return form {return_form}. Please choose either: ' + ', '.join(
+            ['operator', 'matrix', 'dict', 'dict_operator', 'dict_matrix']))
 
     def get_H(self, return_form=None):
         """
@@ -575,13 +577,13 @@ class EffectiveFrame:
 
         elif 'dict' in return_form:
             extra = return_form.split(
-                '_')[1] if '_' in return_form else 'operator'
+                '_')[1] if '_' in return_form else self.__return_form
             if hasattr(self, '_EffectiveFrame__H_dict_form') and self.__H_dict_form.get(extra) is not None:
                 return self.__H_dict_form[extra]
 
             self.__H_dict_form = {}
             self.__H_dict_form[extra] = self.__prepare_result(
-                self.__H_final, return_form)
+                self.__H_final, 'dict'+f'_{extra}')
             self.H = self.__H_dict_form[extra]
         else:
             raise ValueError('Invalid return form. Please choose either: ' + ', '.join(
@@ -641,6 +643,11 @@ class EffectiveFrame:
 
         result = (apply_commutation_relations(
             result, self.commutation_relations)).simplify()
+        
+        if 'dict' in return_form:
+            extra = return_form.split(
+                '_')[1] if '_' in return_form else self.__return_form
+            return_form = 'dict' + f'_{extra}'
 
         return self.__prepare_result(result, return_form)
 
