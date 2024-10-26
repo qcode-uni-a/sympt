@@ -159,7 +159,7 @@ display(mask)
 H_eff.solve(max_order=2, mask=mask)
 ```
 
-$\left[\begin{matrix}0 & 1\\1 & 0\end{matrix}\right]  \cdot {a} + \left[\begin{matrix}1 & 0\\0 & 1\end{matrix}\right]  \cdot {a}^{2}$
+$`\left[\begin{matrix}0 & 1\\1 & 0\end{matrix}\right]  \cdot {a} + \left[\begin{matrix}1 & 0\\0 & 1\end{matrix}\right]  \cdot {a}^{2}`$
 
 
     The perturbative interaction will be added to the full Hamiltonian
