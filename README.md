@@ -15,42 +15,24 @@ This package implements a solver for perturbative expansions in quantum systems,
 
 ## Installation
 
-### Installing dependencies
-To ensure all the required dependencies are installed, use the `requirements.txt` file provided in the repository. You can install the specific versions of the required packages by running:
+### Installing from pypi
 
+It is recommended to create a new virtual environment to install PySW
 ```bash
-pip install -r requirements.txt
+python -m venv .env
+source .env/bin/activate
+pip install pysw
 ```
 
-The `requirements.txt` includes the following packages and versions:
-
-```
-ipython==8.28.0
-multimethod==1.12
-numpy==2.1.2
-sympy==1.13.3
-tabulate==0.9.0
-tqdm==4.66.5
-```
 ### Installing from the repository
 
-To install the package, clone the repository and install the required dependencies. You can do this via pip:
+To install the package, clone the repository and install the required dependencies. This is recommended for developers that want to modify the source code. You can do this via pip:
 
 ```bash
 git clone https://github.com/qcode-uni-a/PySW.git
 cd PySW
-pip install .
+pip install -e .
 ```
-
-### Dependencies
-Alternatively, if you do not wish to use the `requirements.txt` file, you can manually install the following packages:
-
-- `ipython`
-- `multimethod`
-- `numpy`
-- `sympy`
-- `tabulate`
-- `tqdm`
 
 ## Usage
 To use the solver, import the necessary classes and functions from the module. Below is a simple example to get you started.
