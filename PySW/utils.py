@@ -52,7 +52,7 @@ from numpy import (any as np_any, all as np_all, array as np_array,
                    ndarray as np_ndarray, logical_not as np_logical_not,
                    ones as np_ones, vectorize as np_vectorize,
                    zeros as np_zeros, nonzero as np_nonzero)
-from sympy import (Expr, Mul, Add, Pow, Symbol, Matrix, eye, kronecker_product, latex,
+from sympy import (Expr, Mul, Add, Pow, Symbol, Matrix, exp, eye, kronecker_product, latex,
                    zeros as sp_zeros, sqrt as sp_sqrt, diag as sp_diag)
 from sympy.core.numbers import (
     Float, Half, ImaginaryUnit, Integer, One, Rational, Pi)
@@ -110,7 +110,7 @@ def get_order(factor: BosonOp):
 
 
 @multimethod
-def get_order(factor: Union[int, float, complex, Integer, Float, ImaginaryUnit, One, Half, Rational, Pi]):
+def get_order(factor: Union[int, float, complex, Integer, Float, ImaginaryUnit, One, Half, Rational, Pi, exp]):
     """
     Determines the order of basic numeric types.
 

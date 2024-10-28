@@ -57,7 +57,7 @@ from tqdm import tqdm, trange
 from tabulate import tabulate
 from sympy import (Rational as sp_Rational, factorial as sp_factorial,
                    nsimplify as sp_nsimplify, simplify as sp_simplify,
-                   UnevaluatedExpr)
+                   UnevaluatedExpr, exp as sp_exp)
 # import deep copy
 from copy import copy, deepcopy
 
