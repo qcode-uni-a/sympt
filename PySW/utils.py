@@ -52,15 +52,14 @@ from numpy import (any as np_any, all as np_all, array as np_array,
                    ndarray as np_ndarray, logical_not as np_logical_not,
                    ones as np_ones, vectorize as np_vectorize,
                    zeros as np_zeros, nonzero as np_nonzero)
-from sympy import (Expr, Mul, Add, Pow, Symbol, Matrix, exp, eye, kronecker_product, latex,
-                   zeros as sp_zeros, sqrt as sp_sqrt, diag as sp_diag)
+from sympy import (Expr, Mul, Add, Pow, Symbol, Matrix, exp, latex, diag as sp_diag, cos, sin)
 from sympy.core.numbers import (
     Float, Half, ImaginaryUnit, Integer, One, Rational, Pi)
 from sympy.physics.quantum import Dagger, Operator
 from sympy.physics.quantum.boson import BosonOp
 
 # Local application/library imports
-from .classes import MulGroup, RDSymbol, RDOperator, Expression
+from .classes import MulGroup, RDSymbol, RDOperator, Expression, get_matrix
 
 '''
 ---------------------------------------------------------------------------------------------------------------------------------------
@@ -110,7 +109,7 @@ def get_order(factor: BosonOp):
 
 
 @multimethod
-def get_order(factor: Union[int, float, complex, Integer, Float, ImaginaryUnit, One, Half, Rational, Pi, exp]):
+def get_order(factor: Union[int, float, complex, Integer, Float, ImaginaryUnit, One, Half, Rational, Pi, exp, cos, sin]):
     """
     Determines the order of basic numeric types.
 
@@ -437,22 +436,12 @@ def domain_expansion(term: dict, structure={}, subspaces=None):
         # Return the MulGroup with the other factors, infinite operators, boson count, and subspaces
         return MulGroup(Mul(*term['other']), infinite_operators_array, delta, Ns), is_infinite_diagonal
 
-    # Create a dictionary with the subspaces as keys and the identity matrix as values
-    finite_operators = {subspace.name: eye(
-        subspace.dim) for subspace in subspaces}
-    # Get the other factors of the term
-    other_factors = Mul(*term['other'])
-
-    for operator in term['finite']:
-        # Get the subspace of the operator
-        subspace = operator.subspace
-        # Add the operator matrix to the corresponding subspace in the finite operators dictionary
-        finite_operators[subspace] = operator.matrix
-
-    # Create the finite matrix by taking the kronecker product of the finite operators
-    finite_matrix = kronecker_product(*list(finite_operators.values()))
+    finite_matrix = get_matrix(term['finite'], subspaces)  # Get the finite matrix
     # Check if the finite matrix is diagonal
     is_finite_diagonal = finite_matrix.is_diagonal()
+
+    # Get the other factors of the term
+    other_factors = Mul(*term['other'])
 
     return MulGroup(other_factors * finite_matrix, infinite_operators_array, delta, Ns), is_infinite_diagonal and is_finite_diagonal
 
@@ -717,7 +706,8 @@ def display_dict(dictionary):
         A dictionary with keys and values to be displayed.
     """
     for key, value in dictionary.items():
-        display(Math(f"{latex(key.simplify())} : {latex(value)}"))
+        key = key.simplify() if isinstance(key, Expression) else key
+        display(Math(f"{latex(key)} : {latex(value)}"))
 
 
 def group_by_operators(expr):
@@ -737,7 +727,7 @@ def group_by_operators(expr):
     expr = expr.expand()
     result_dict = {}
 
-    operators = list(expr.atoms(BosonOp)) + list(expr.atoms(RDOperator))
+    operators = list(expr.atoms(BosonOp)) + list(expr.atoms(RDOperator))  + list(expr.atoms(Operator))
     terms = expr.as_ordered_terms()
     factors_of_terms = [term.as_ordered_factors() for term in terms]
 
@@ -818,82 +808,3 @@ def get_perturbative_expression(expr, structure, subspaces=None):
                              mul_group_term).simplify()
 
     return result
-
-
-'''
----------------------------------------------------------------------------------------------------------------------------------------
-                                                TRUNCATE INFINITE PART
-    
-    - This function is deprecated and should be removed if not used.
----------------------------------------------------------------------------------------------------------------------------------------
-'''
-
-
-def get_boson_matrix(is_annihilation, dim):
-    """
-    Generates the matrix representation for a bosonic operator.
-
-    Parameters
-    ----------
-    is_annihilation : bool
-        Indicates whether the operator is an annihilation operator.
-    dim : int
-        The dimension of the matrix to generate.
-
-    Returns
-    -------
-    Matrix
-        A matrix representation for the bosonic operator.
-    """
-    matrix = sp_zeros(dim, dim)
-    if is_annihilation:
-        for i in range(1, dim):
-            matrix[i-1, i] = sp_sqrt(i)
-        return matrix
-
-    for i in range(1, dim):
-        matrix[i, i-1] = sp_sqrt(i)
-
-    return matrix
-
-
-@multimethod
-def get_matrix(H: RDOperator, list_subspaces):
-    return kronecker_product(*[H.matrix if H.subspace == subspace else eye(dim) for subspace, dim in list_subspaces])
-
-
-@multimethod
-def get_matrix(H: BosonOp, list_subspaces):
-    # list_subspaces : [[subspace, dim], ...]
-
-    return kronecker_product(*[get_boson_matrix(H.is_annihilation, dim) if H.name == subspace else eye(dim) for subspace, dim in list_subspaces])
-
-
-@multimethod
-def get_matrix(H: Union[Symbol, RDSymbol, int, float, complex, Integer, Float, ImaginaryUnit, One, Half, Rational, Pi], list_subspaces):
-
-    return H * kronecker_product(*[eye(dim) for subspace, dim in list_subspaces])
-
-
-@multimethod
-def get_matrix(H: Pow, list_subspaces):
-    base, exp = H.as_base_exp()
-    return get_matrix(base, list_subspaces) ** exp
-
-
-@multimethod
-def get_matrix(H: Expr, list_subspaces):
-    # list_subspaces : [[subspace, dim], ...]
-    H = H.expand()
-    result_matrix = sp_zeros(Mul(*[dim for subspace, dim in list_subspaces]))
-
-    terms = H.as_ordered_terms()
-
-    for term in terms:
-        term_matrix = 1
-        factors = term.as_ordered_factors()
-        for factor in factors:
-            factor_matrix = get_matrix(factor, list_subspaces)
-            term_matrix = term_matrix * factor_matrix
-        result_matrix += term_matrix
-    return result_matrix
