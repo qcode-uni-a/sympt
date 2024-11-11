@@ -56,10 +56,9 @@ from .utils import *
 from tqdm import tqdm, trange
 from tabulate import tabulate
 from sympy import (Rational as sp_Rational, factorial as sp_factorial,
-                   nsimplify as sp_nsimplify, simplify as sp_simplify,
-                   UnevaluatedExpr, exp as sp_exp)
+                   nsimplify as sp_nsimplify, simplify as sp_simplify)
 # import deep copy
-from copy import copy, deepcopy
+from copy import copy
 
 
 def Denominator(H0_expr, uu, vv, Delta):
@@ -135,7 +134,7 @@ def get_S(H0_expr, equation_to_solve):
             if denom == 0:
                 if uu == vv and Delta == 0:
                     raise ValueError(f'S contains diagonal elements. If you saw this message, please contact the developers.')
-                raise ValueError(f'You are trying to decouple degenarate states for the finite entry {uu, vv} and Delta {Delta}')
+                raise ValueError(f'It is impossible to decouple the state with index {int(uu)} (Delta {Delta}) from state with index {int(vv)} (Delta {Delta}) because they are degenerate (see H0)')
             S_mat[uu, vv] /= denom
         S += MulGroup(S_mat, mul_group.inf, mul_group.delta, mul_group.Ns)
     return S
@@ -254,8 +253,16 @@ class EffectiveFrame:
             # Set the perturbative interaction to zero
             self.__V_old = S.Zero
 
-        # Add the Hermitian conjugate and the blocks to the mask. This ensures that the mask is Hermitian
-        mask = mask + mask.hermitian() + Blocks() if mask is not None else None
+        if mask is not None:
+            # Add the Hermitian conjugate and the blocks to the mask. This ensures that the mask is Hermitian
+            mask = mask + mask.hermitian()
+            if isinstance(mask, Block):
+                mask = Blocks(np_array([mask]), subspaces=mask.subspaces)
+            # Check if the order of the subspaces in the mask is the same as the order of the subspaces in the Hamiltonian
+            if mask.subspaces is not None and mask.subspaces != [subspace.name for subspace in self.subspaces]:
+                raise ValueError(
+                    'The order of the subspaces in the mask must be the same as the order of the subspaces in the Hamiltonian')
+
         return mask
 
     def __prepare_Hs_Vs(self, do_regular_SW, mask):
@@ -336,6 +343,7 @@ class EffectiveFrame:
 
         # Prepare the Hamiltonians and perturbative interactions
         Hs, Vs, H0_expr = self.__prepare_Hs_Vs(do_regular_SW, mask)
+
         # Compute the factorials for the perturbative orders
         factorials = [sp_Rational(1, sp_factorial(k))
                       for k in range(0, max_order + 1)]
@@ -656,7 +664,7 @@ class EffectiveFrame:
 
         subspaces_headers = [['Name', 'Type', 'Dimension']]
 
-        subspaces_finite = [[subspace.name, 'Finite', f'{subspace.dim}x{subspace.dim}']
+        subspaces_finite = [[subspace.name, 'Fermionic' if subspace.is_fermionic else 'Finite' , f'{subspace.dim}x{subspace.dim}']
                             for subspace in self.subspaces if subspace.name != 'finite_pysw_built_in_function'] if self.subspaces is not None else []
         
         if self.__return_form == 'matrix' and self.subspaces is None:
