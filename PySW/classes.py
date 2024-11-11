@@ -43,7 +43,7 @@ from sympy import (
     kronecker_product, sympify, cancel,
     MutableDenseMatrix, eye, I, sqrt,
     Rational, nsimplify, zeros as sp_zeros,
-    latex as sp_latex
+    latex as sp_latex, simplify as sp_simplify
 )
 
 from sympy.matrices.dense import matrix_multiply_elementwise as sp_elementwise
@@ -92,7 +92,7 @@ class Blocks:
         Applies a mask to the given expression (either `MulGroup` or `Expression`) based on the blocks (self).
     """
 
-    def __init__(self, expr=None):
+    def __init__(self, expr=None, subspaces=None):
         """
         Initializes the `Blocks` object.
 
@@ -100,7 +100,11 @@ class Blocks:
         ----------
         expr : np_ndarray, optional
             A NumPy array of expressions to initialize the block with. Default is an empty array.
+
+        subspaces : list, optional
+            A list of finite subspaces. Default is None.
         """
+        self.subspaces = subspaces
         self.expr = np_empty(0, dtype=object) if expr is None else expr
         self.expr = self.expr[self.expr != 0]
 
@@ -154,7 +158,7 @@ class Blocks:
         Blocks
             The Hermitian of the block collection.
         """
-        return Blocks(np_array([block.hermitian() for block in self.expr]))
+        return Blocks(np_array([block.hermitian() for block in self.expr]), subspaces=self.subspaces)
 
     def __add__(self, other):
         """
@@ -324,13 +328,13 @@ class Block:
         Applies a mask to the given expression based on the block (self).
     """
 
-    def __init__(self, fin: Union[MutableDenseMatrix, np_ndarray] = None, inf: Expr = None, deltas=None):
+    def __init__(self, fin: Union[MutableDenseMatrix, np_ndarray, Expr, 'RDOperator'] = None, inf: Expr = None, deltas=None, subspaces=None):
         """
         Initialize a block with a finite and infinite part, as well as deltas.
 
         Parameters
         ----------
-        fin : MutableDenseMatrix or np_ndarray
+        fin : MutableDenseMatrix, np_ndarray, Expr, RDOperator, optional
             The finite part of the block.
 
         inf : Expr, optional
@@ -339,13 +343,49 @@ class Block:
         deltas : dict, optional
             A dictionary representing deltas (default is None).
         """
+        self.subspaces = subspaces
 
         if fin is None and inf is None:
             raise ValueError('fin and inf cannot be both None')
 
-        if fin is not None and not isinstance(fin, MutableDenseMatrix) and not isinstance(fin, np_ndarray):
+        if fin is not None and not isinstance(fin, MutableDenseMatrix) and not isinstance(fin, np_ndarray) and not isinstance(fin, Expr) and not isinstance(fin, RDOperator):
             raise ValueError(
-                'fin must be a MutableDenseMatrix or a NumPy array')
+                'fin must be a MutableDenseMatrix (NumPy array) or Expr')
+        
+        if isinstance(fin, Expr) or isinstance(fin, RDOperator):
+            if subspaces is None:
+                raise ValueError('subspaces must be provided when fin is an Expr')
+            
+            self.subspaces = [subspace.name for subspace in subspaces]
+            
+            terms = fin.expand().as_ordered_terms()        # Expand and get ordered terms from the expression to group
+            expanded_terms = []
+
+            for term in terms:                            # Iterate over the terms to group them by order
+                factors = term.as_ordered_factors()   # Get the factors of the term
+                # Initialize the result dictionary. Finite contains the finite operators, infinite contains the infinite operators and other contains the rest of the factors.
+                result_dict = {'other': [], 'finite': []}
+                for factor in factors:
+                    if factor.has(BosonOp):
+                        raise ValueError('The expression must not contain infinite parts')
+                    if factor.has(RDOperator):
+                        # Add the factor to the corresponding type
+                        result_dict['finite'].append(factor)
+                        continue
+                    # Add the factor to the corresponding type
+                    result_dict['other'].append(factor)
+
+                # Add the term to the corresponding order in the result dictionary
+                expanded_terms.append(result_dict)
+
+            result_fin = None
+            for term in expanded_terms:
+                fin_matrix = get_matrix(term['finite'], subspaces) * Mul(*term['other'])
+                if result_fin is None:
+                    result_fin = fin_matrix
+                    continue
+                result_fin += fin_matrix
+            fin = np_array(sp_simplify(result_fin)) != 0
 
         if fin is None:
             fin = [[1]]
@@ -406,8 +446,8 @@ class Block:
             A new `Block` object representing the Hermitian conjugate.
         """
         if self.inf is None:
-            return Block(self.fin.T)
-        return Block(self.fin.T, Dagger(self.inf))
+            return Block(self.fin.T, subspaces=self.subspaces)
+        return Block(self.fin.T, Dagger(self.inf), subspaces=self.subspaces)
 
     def has_diagonal(self):
         """
@@ -487,9 +527,11 @@ class Block:
         if other == 0:
             return self
         if isinstance(other, Block):
+            if self.subspaces != other.subspaces:
+                raise ValueError('Subspaces are different')
             if other.inf == self.inf:
-                return Block(self.fin + other.fin, self.inf, self.deltas)
-            return Blocks(np_array([self, other]))
+                return Block(self.fin + other.fin, self.inf, self.deltas, self.subspaces)
+            return Blocks(np_array([self, other]), self.subspaces)
         if isinstance(other, Blocks):
             return other + self
         raise ValueError(
@@ -505,6 +547,9 @@ class Block:
 
     def _repr_latex_(self):
         return f'${self._latex_()}$'
+    
+    def __mul__(self, other):
+        raise ValueError('Block objects cannot be multiplied')
 
 
 class Expression:
@@ -903,7 +948,7 @@ class RDOperator(Operator):
 
     @property
     def subspace(self):
-        return self._subspace
+        return str(self.args[2])
 
     def __new__(cls, name, matrix, subspace):
         """
@@ -924,9 +969,10 @@ class RDOperator(Operator):
             A new `RDOperator` instance.
         """
         matrix = sympify(matrix)
-        obj = Operator.__new__(cls, name, matrix)
+        subspace = str(subspace)
+        obj = Operator.__new__(cls, name, matrix, subspace)
         # obj._matrix = matrix
-        obj._subspace = subspace
+        # obj._subspace = subspace
         return obj
 
     def _sympystr(self, printer):
@@ -971,7 +1017,7 @@ class RDBasis:
         If the matrix to be projected has incorrect dimensions.
     """
 
-    def __init__(self, name: str, dim: int):
+    def __init__(self, name: str, dim: int=None, projector_form=False, fermionic=False):
         """
         Parameters
         ----------
@@ -981,9 +1027,29 @@ class RDBasis:
             The dimension of the basis.
         """
         self.name = name
+        names = None
+        self.is_fermionic = fermionic
+        if fermionic:
+            names = [
+                f'{{n_{{{name}}}^{{-}}}}',
+                f'{name}',
+                f'{{{name} ^ {{\\dagger}} }}',
+                f'{{n_{{{name}}}^{{+}}}}'
+            ]
+            if dim is not None and dim != 2:
+                print('Warning: Fermionic basis is only available in dimension 2 and will be set to 2.')
+            projector_form = True
+            dim = 2
+        
+        if dim is None:
+            raise ValueError('Dimension must be provided.')
+
         self.dim = dim
-        matrix_basis = self.get_gell_mann()
-        self.basis = np_array([RDOperator(f'{name}_{i}', mat, subspace=name)
+        matrix_basis = self.get_gell_mann() if not projector_form else self.get_projector_matrices()
+        
+        names = [f'{name}_{i}' for i in range(dim**2)] if names is None else names
+
+        self.basis = np_array([RDOperator(names[i], mat, subspace=name)
                                for i, mat in enumerate(matrix_basis)], dtype=object)
         self.basis_matrices = np_array(
             [basis.matrix for basis in self.basis], dtype=object)
@@ -992,6 +1058,23 @@ class RDBasis:
         else:
             self.basis_ling_alg_norm = nsimplify(
                 (self.basis[1].matrix.T.conjugate() @ self.basis[1].matrix).trace())
+
+    def get_projector_matrices(self):
+        """
+        Returns the projectors matrices for the basis.
+
+        Returns
+        -------
+        ndarray
+            An array of projectors for the basis.
+        """
+        matrices = []
+        for i in range(self.dim):
+            for j in range(self.dim):
+                mat = sp_zeros(self.dim, self.dim)
+                mat[i, j] = 1
+                matrices.append(mat)
+        return matrices
 
     def get_gell_mann(self):
         """
@@ -1212,3 +1295,22 @@ class RDSymbol(Symbol):
             raise ValueError('Order must be real.')
         obj._order = order
         return obj
+    
+
+def get_matrix(term_finite, subspaces):
+    # Create a dictionary with the subspaces as keys and the identity matrix as values
+    finite_operators = {subspace.name: eye(
+        subspace.dim) for subspace in subspaces}
+
+    for operator in term_finite:
+        exponent = 1
+        if isinstance(operator, Pow):
+            exponent = operator.exp
+            operator = operator.base
+        # Get the subspace of the operator
+        subspace = operator.subspace
+        # Add the operator matrix to the corresponding subspace in the finite operators dictionary
+        finite_operators[subspace] *= operator.matrix**exponent
+
+    # Create the finite matrix by taking the kronecker product of the finite operators
+    return kronecker_product(*list(finite_operators.values()))
