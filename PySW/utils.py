@@ -316,7 +316,7 @@ def get_count_boson(factor: Pow):
 
 
 @multimethod
-def get_count_boson(factor: Union[int, float, complex, Integer, Float, ImaginaryUnit, One, Half, Rational, Pi, exp]):
+def get_count_boson(factor: Union[RDSymbol, int, float, complex, Integer, Float, ImaginaryUnit, One, Half, Rational, Pi, exp]):
     """
     Returns zero boson count for a trivial factor.
 
