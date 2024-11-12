@@ -452,6 +452,10 @@ class EffectiveFrame:
         self.__H_final = H_final
         self.__full_diagonalization = full_diagonalization
         self.__has_mask = mask is not None
+        self.__Hs = Hs
+        self.__Vs = Vs
+        self.__ns = ns_comms
+        self.__commutation_relations = self.commutation_relations
 
         if hasattr(self, '_EffectiveFrame__H_operator_form'):
             del (self.__H_operator_form)
@@ -516,7 +520,7 @@ class EffectiveFrame:
             for mul_group in tqdm(O_final.expr, desc='Converting to matrix form'):
                 O_matrix_form += mul_group.fn * Mul(*mul_group.inf).simplify()
 
-            if self.subspaces is None:
+            if self.subspaces is None and O_final.expr[0].fn.shape[0] == 1:
                 return O_matrix_form[0]
 
             return O_matrix_form
@@ -537,6 +541,10 @@ class EffectiveFrame:
             elif extra == 'matrix':
                 for mul_group in tqdm(O_final.expr, desc='Converting to dictionary (matrix) form'):
                     O_dict_form[Mul(*mul_group.inf)] = mul_group.fn.expand()
+            
+            else:
+                raise ValueError(f'Invalid return form {return_form}. Please choose either: ' + ', '.join(
+                    ['operator', 'matrix', 'dict', 'dict_operator', 'dict_matrix']))
 
             return O_dict_form
 
