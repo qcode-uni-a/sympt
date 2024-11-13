@@ -382,7 +382,7 @@ class EffectiveFrame:
             B_k = Expression()
 
             # Iterate over the partitions. Eliminate the last partition because it is the term [H0, S] and it is used to compute the operator S
-            for key in set_of_keys[:-1]:
+            for key in set_of_keys:
 
                 if len(key) == 1:
                     # Does not deppend of full_diagonalization neither on mask
