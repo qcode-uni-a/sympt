@@ -382,7 +382,7 @@ class EffectiveFrame:
             B_k = Expression()
 
             # Iterate over the partitions. Eliminate the last partition because it is the term [H0, S] and it is used to compute the operator S
-            for key in set_of_keys:
+            for key in set_of_keys[:-1]:
 
                 if len(key) == 1:
                     # Does not deppend of full_diagonalization neither on mask
@@ -433,7 +433,7 @@ class EffectiveFrame:
                 B_k = (apply_commutation_relations(
                     B_k, self.commutation_relations)).simplify()
 
-            if order < max_order:
+            if order <= max_order:
                 # Compute the anti-Hermitian operator S for the perturbative order
                 S_k = (get_S(H0_expr, -B_k)).simplify()
                 # Store the anti-Hermitian operator S for the perturbative order
