@@ -52,7 +52,7 @@ from numpy import (any as np_any, all as np_all, array as np_array,
                    ndarray as np_ndarray, logical_not as np_logical_not,
                    ones as np_ones, vectorize as np_vectorize,
                    zeros as np_zeros, nonzero as np_nonzero)
-from sympy import (Expr, Mul, Add, Pow, Symbol, Matrix, exp, latex, diag as sp_diag, cos, sin)
+from sympy import (Expr, Mul, Add, Pow, Symbol, Matrix, exp, latex, diag as sp_diag, cos, sin, factor_terms as sp_factor_terms)
 from sympy.core.numbers import (
     Float, Half, ImaginaryUnit, Integer, One, Rational, Pi)
 from sympy.physics.quantum import Dagger, Operator
@@ -107,9 +107,30 @@ def get_order(factor: BosonOp):
         factor if factor.is_annihilation else factor * Dagger(factor)
     return 0, ('infinite', key)
 
+@multimethod
+def get_order(factor: Union[exp, cos, sin]):
+    """
+    Determines the order of a sine expression.
+
+    Parameters
+    ----------
+    factor : sin
+        The sine expression to evaluate.
+
+    Returns
+    -------
+    tuple
+        The order and its classification ('other').
+    """
+    order, (o_type, o_key) = get_order(factor.args[0]) # Taylor expansion of sin(x) = x - x^3/3! + x^5/5! - ...
+    if o_type != 'other':
+        raise ValueError(f"Functions of operators are not yet supported.")
+    if isinstance(factor, sin):
+        return order, ('other', None)
+    return 0, ('other', None)
 
 @multimethod
-def get_order(factor: Union[int, float, complex, Integer, Float, ImaginaryUnit, One, Half, Rational, Pi, exp, cos, sin]):
+def get_order(factor: Union[int, float, complex, Integer, Float, ImaginaryUnit, One, Half, Rational, Pi]):
     """
     Determines the order of basic numeric types.
 
@@ -808,3 +829,13 @@ def get_perturbative_expression(expr, structure, subspaces=None):
                              mul_group_term).simplify()
 
     return result
+
+def extract_frequencies(term):
+    term = sp_factor_terms(term)
+    exponentials_atoms = term.atoms(exp)
+    if len(exponentials_atoms) == 0:
+        return 0
+    if len(exponentials_atoms) > 1:
+        raise ValueError("The term contains more than one exponential. If you see this error, please report it to the developers.")
+
+    return exponentials_atoms.pop().args[0]

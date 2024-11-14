@@ -32,6 +32,8 @@ numpy==2.1.2
 sympy==1.13.3
 """
 
+global_variables = ['hbar', 't']
+
 from typing import Union
 
 # Importing necessary modules from SymPy
@@ -43,7 +45,8 @@ from sympy import (
     kronecker_product, sympify, cancel,
     MutableDenseMatrix, eye, I, sqrt,
     Rational, nsimplify, zeros as sp_zeros,
-    latex as sp_latex, simplify as sp_simplify
+    latex as sp_latex, simplify as sp_simplify,
+    diff as sp_diff
 )
 
 from sympy.matrices.dense import matrix_multiply_elementwise as sp_elementwise
@@ -63,7 +66,6 @@ from numpy import (
 
 # Importing additional utility from itertools
 from itertools import product
-
 
 class Blocks:
     """
@@ -591,6 +593,7 @@ class Expression:
         """
         self.expr = np_empty(0, dtype=object) if expr is None else expr
         self.expr = self.expr[self.expr != 0]
+        self.is_time_dependent = False if expr is None else np_any(np_vectorize(lambda x: x.is_time_dependent, otypes=[np_ndarray])(self.expr))
 
     def __add__(self, other):
         """
@@ -704,6 +707,24 @@ class Expression:
 
     def __rmul__(self, other):
         return self.__mul__(other)
+    
+    def diff(self, theta):
+        """
+        Differentiates the expression with respect to the given variable.
+
+        Parameters
+        ----------
+        theta : Symbol
+            The variable to differentiate with respect to.
+
+        Returns
+        -------
+        Expression
+            A new `Expression` representing the derivative of the current expression.
+        """
+        if not self.is_time_dependent:
+            return Expression()
+        return Expression(np_vectorize(lambda x: x.diff(theta), otypes=[object])(self.expr))
 
     def __str__(self):
         if len(self.expr) == 0:
@@ -835,6 +856,7 @@ class MulGroup(Expr):
         if not isinstance(fn, MutableDenseMatrix):
             fn = MutableDenseMatrix([fn])
         obj = Expr.__new__(cls, fn, inf, delta, Ns)
+        obj.is_time_dependent = fn.has(t)
 
         return obj
 
@@ -902,6 +924,24 @@ class MulGroup(Expr):
 
     def __rmul__(self, other):
         return self.__mul__(other)
+    
+    def diff(self, theta):
+        """
+        Differentiates the group with respect to the given variable.
+
+        Parameters
+        ----------
+        theta : Symbol
+            The variable to differentiate with respect to.
+
+        Returns
+        -------
+        MulGroup
+            A new `MulGroup` representing the derivative of the current group.
+        """
+        if not self.is_time_dependent:
+            return MulGroup(0, self.inf, self.delta, self.Ns)
+        return MulGroup(sp_diff(self.fn, theta), self.inf, self.delta, self.Ns)
 
     def _sympystr(self, printer):
         return f'{self.fn} * {Mul(*self.inf)}'
@@ -1289,7 +1329,11 @@ class RDSymbol(Symbol):
     def order(self):
         return self._order
 
-    def __new__(cls, name, *args, order=0, **kwargs):
+    def __new__(cls, name, *args, **kwargs):
+        order = kwargs.pop('order', 0)
+        overwrite = kwargs.pop('overwrite', False)
+        if name in global_variables and not overwrite:
+            raise ValueError(f'{name} is a reserved name. Import "{name}" from PySW.Variables instead.')
         obj = Symbol.__new__(cls, name, *args, **kwargs)
         if isinstance(order, complex):
             raise ValueError('Order must be real.')
@@ -1314,3 +1358,6 @@ def get_matrix(term_finite, subspaces):
 
     # Create the finite matrix by taking the kronecker product of the finite operators
     return kronecker_product(*list(finite_operators.values()))
+
+hbar = RDSymbol('hbar', order=0, positive=True, real=True, overwrite=True)
+t = RDSymbol('t', order=0, real=True, overwrite=True)

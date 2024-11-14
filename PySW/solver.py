@@ -58,6 +58,7 @@ from tabulate import tabulate
 from sympy import (Rational as sp_Rational, factorial as sp_factorial,
                    nsimplify as sp_nsimplify, simplify as sp_simplify)
 # import deep copy
+import sympy as sp
 from copy import copy
 
 
@@ -103,7 +104,7 @@ def Denominator(H0_expr, uu, vv, Delta):
     return E.expand().simplify()
 
 
-def get_S(H0_expr, equation_to_solve):
+def get_S(H0_expr, equation_to_solve, correct_denominator=False):
     """
     Solves for the anti-Hermitian operator S in the Schrieffer-Wolff transformation.
 
@@ -131,11 +132,21 @@ def get_S(H0_expr, equation_to_solve):
             # This can be optimized by using the fact that the EquationtoSolve is Hermitian and S is anti-Hermitian
             # This is a good candidate for parallelization
             denom = Denominator(H0_expr, uu, vv, Delta)
-            if denom == 0:
+
+            if denom == 0 and not correct_denominator:
                 if uu == vv and Delta == 0:
                     raise ValueError(f'S contains diagonal elements. If you saw this message, please contact the developers.')
                 raise ValueError(f'It is impossible to decouple the state with index {int(uu)} (Delta {Delta}) from state with index {int(vv)} (Delta {Delta}) because they are degenerate (see H0)')
-            S_mat[uu, vv] /= denom
+            elif not correct_denominator:
+                S_mat[uu, vv] /= denom
+            else:
+                corrected_S = 0
+                for term in S_mat[uu, vv].expand().as_ordered_terms():
+                    freq_term = (extract_frequencies(term) * (-I / t * hbar)).cancel()  # We assume that the argument for the exponential is in the form of exp(i/hbar Frequency t)
+                    corrected_S += term / (denom + freq_term)
+                S_mat[uu, vv] = corrected_S
+
+
         S += MulGroup(S_mat, mul_group.inf, mul_group.delta, mul_group.Ns)
     return S
 
@@ -269,6 +280,10 @@ class EffectiveFrame:
         # Compute the perturbative expression for the Hamiltonian
         Hs_aux = get_perturbative_expression(
             self.__H_old, self.__structure, self.subspaces)
+        
+        # If the full diagonalization or mask routine is used
+        Vs = {}
+        Hs = {}
 
         # If the regular Schrieffer-Wolff transformation is used
         if do_regular_SW:
@@ -281,44 +296,52 @@ class EffectiveFrame:
                 # Check if the zeroth order of the perturbative interaction is zero
                 raise ValueError(
                     f'The zeroth order of the perturbative interaction is not zero, but it is instead: {Vs.get(0)}')
-            # Apply the commutation relations to the zeroth-order Hamiltonian
-            H0_expr = apply_commutation_relations(
-            Hs.get(0) + Expression(), self.commutation_relations).simplify()
-            return Hs, Vs, H0_expr
 
-        # If the full diagonalization or mask routine is used
-        Vs = {}
-        Hs = {}
-        # Iterate over the perturbative expressions for the Hamiltonian
-        for h_order, h_expr in Hs_aux.items():
-            # If the order is zero
-            if h_order == 0:
-                # Separate the diagonal and off-diagonal terms of the Hamiltonian
-                new_vk, new_hk = separate_diagonal_off_diagonal(h_expr)
-                # If the diagonal terms are not zero
-                if new_vk.expr.shape[0] != 0:
-                    # Check if the zeroth order of the Hamiltonian is diagonal
-                    raise ValueError(
-                        'The zeroth order of the Hamiltonian should be diagonal')
-                # Set the Hamiltonian to the off-diagonal terms
+        else:
+            # Iterate over the perturbative expressions for the Hamiltonian
+            for h_order, h_expr in Hs_aux.items():
+                # If the order is zero
+                if h_order == 0:
+                    # Separate the diagonal and off-diagonal terms of the Hamiltonian
+                    new_vk, new_hk = separate_diagonal_off_diagonal(h_expr)
+                    # If the diagonal terms are not zero
+                    if new_vk.expr.shape[0] != 0:
+                        # Check if the zeroth order of the Hamiltonian is diagonal
+                        raise ValueError(
+                            'The zeroth order of the Hamiltonian should be diagonal')
+                    # Set the Hamiltonian to the off-diagonal terms
+                    Hs[h_order] = new_hk
+                    continue
+
+                # If the mask is used
+                if mask is not None:
+                    # Apply the mask to the perturbative expression
+                    new_vk, new_hk = mask.apply_mask(h_expr)
+                # If the full diagonalization routine is used
+                else:
+                    # Separate the diagonal and off-diagonal terms of the Hamiltonian
+                    new_vk, new_hk = separate_diagonal_off_diagonal(h_expr)
+
                 Hs[h_order] = new_hk
-                continue
-
-            # If the mask is used
-            if mask is not None:
-                # Apply the mask to the perturbative expression
-                new_vk, new_hk = mask.apply_mask(h_expr)
-            # If the full diagonalization routine is used
-            else:
-                # Separate the diagonal and off-diagonal terms of the Hamiltonian
-                new_vk, new_hk = separate_diagonal_off_diagonal(h_expr)
-
-            Hs[h_order] = new_hk
-            Vs[h_order] = new_vk
+                Vs[h_order] = new_vk
 
         # Apply the commutation relations to the zeroth-order Hamiltonian
         H0_expr = apply_commutation_relations(
         Hs.get(0) + Expression(), self.commutation_relations).simplify()
+        if H0_expr.is_time_dependent:
+            raise ValueError('The zeroth order of the Hamiltonian must be time-independent.')
+        self.__do_time_dependent = np_any([v.is_time_dependent for k, v in Hs.items() if k != 0]) or np_any([v.is_time_dependent for k, v in Vs.items() if k != 0])
+
+        if self.__do_time_dependent:
+            freqs_orders = [get_order(exponential.args[0])[0] for exponential in (self.__H_old + self.__V_old).atoms(exp)]
+            if len(set(freqs_orders)) > 1:
+                raise ValueError('The Hamiltonian contains multiple frequencies with different orders. This is not supported yet.')
+            self.__frequency_order = freqs_orders[0]
+            if int(self.__frequency_order) - self.__frequency_order != 0 or self.__frequency_order < 0:
+                raise ValueError('The driving frequency order must be a positive integer or zero.')
+            self.__frequency_order = int(self.__frequency_order)
+            self.__is_frequency_perturbative = self.__frequency_order > 0
+
         return Hs, Vs, H0_expr
 
     def solve(self, max_order=2, full_diagonalization=False, mask=None):
@@ -346,12 +369,15 @@ class EffectiveFrame:
 
         # Compute the factorials for the perturbative orders
         factorials = [sp_Rational(1, sp_factorial(k))
-                      for k in range(0, max_order + 1)]
+                      for k in range(0, max_order + 3)]
         # Initialize the dictionary to store the anti-Hermitian operator S for each order
         Ss = {}
+        dtSs = {}
+
+        Os_dicts = [Hs, Vs, dtSs]
 
         @memoized
-        def nest_commute(parts, is_Vs):
+        def nest_commute(parts, Os_index):
             '''
             This function computes the nested commutator for the Schrieffer-Wolff transformation.
 
@@ -359,14 +385,15 @@ class EffectiveFrame:
             ----------
             parts : list
                 The list of parts to compute the nested commutator.
-            is_Vs : bool
+            Os_index : bool or 2
                 A boolean value indicating whether the nested commutator is for the perturbative interaction.
                 If True, the nested commutator is for the perturbative interaction; otherwise, it is for the block-diagonal part.
+                If 2, the nested commutator is for the time derivative of the perturbative interaction.
             '''
             if len(parts) == 2:
-                Os = Vs if is_Vs else Hs
+                Os = Os_dicts[Os_index]
                 return commutator(Os.get(parts[0], 0), Ss[parts[1]])
-            return commutator(nest_commute(parts[:-1], is_Vs), Ss[parts[-1]])
+            return commutator(nest_commute(parts[:-1], Os_index), Ss[parts[-1]])
 
         # Extract the number operators from  the zeroth-order Hamiltonian
         H0_expr, ns_comms = extract_ns(H0_expr, self.__structure)
@@ -383,27 +410,36 @@ class EffectiveFrame:
 
             # Iterate over the partitions. Eliminate the last partition because it is the term [H0, S] and it is used to compute the operator S
             for key in set_of_keys[:-1]:
-
                 if len(key) == 1:
                     # Does not deppend of full_diagonalization neither on mask
                     Vk = Vs.get(key[0], Expression())
                     # Add the perturbative interaction to the operator B_k (Equation to solve)
                     B_k += Vk
+                    # If do_time_dependent
+                    if self.__do_time_dependent:
+                        dtSs[order + self.__frequency_order] = Ss.get(order, Expression()).diff(t)
+                        B_k -= I * hbar * dtSs.get(order - self.__frequency_order, Expression())
+
                     # Add the perturbative Hamiltonian to the final Hamiltonian
                     H_final += Hs.get(key[0], Expression())
                     continue
 
                 # Compute the nestedness of the partition
                 nestedness = len(key) - 1
-
+                is_nestedness_even = nestedness % 2 == 0
                 # If the regular Schrieffer-Wolff transformation is used
                 if do_regular_SW:
                     # Compute the nested commutator for the regular Schrieffer-Wolff transformation
-                    B_k = (B_k + nest_commute(key, nestedness %
-                           2 == 0) * factorials[nestedness]).simplify()
+                    B_k = (B_k + nest_commute(key, is_nestedness_even) * factorials[nestedness]).simplify()
                     # Compute the nested commutator for the regular Schrieffer-Wolff transformation
-                    H_final = (H_final + nest_commute(key, nestedness %
-                               2 != 0) * factorials[nestedness]).simplify()
+                    H_final = (H_final + nest_commute(key, not is_nestedness_even) * factorials[nestedness]).simplify()
+
+                    if self.__do_time_dependent:
+                        if is_nestedness_even:
+                            B_k = (B_k - I * hbar * nest_commute(key, 2) * factorials[nestedness + 1]).simplify()
+                        else:
+                            H_final = (H_final - I * hbar * nest_commute(key, 2) * factorials[nestedness + 1]).simplify()
+                            
                 # If the full diagonalization or mask routine is used
                 else:
                     # Compute the nested commutator for the full diagonalization or mask routine
@@ -435,16 +471,15 @@ class EffectiveFrame:
 
             if order <= max_order:
                 # Compute the anti-Hermitian operator S for the perturbative order
-                S_k = (get_S(H0_expr, -B_k)).simplify()
+                S_k = (get_S(H0_expr, -B_k, self.__do_time_dependent and not self.__is_frequency_perturbative)).simplify()
+                if self.__do_time_dependent and order + self.__frequency_order <= max_order:
+                    dtSs[order + self.__frequency_order] = S_k.diff(t)
                 # Store the anti-Hermitian operator S for the perturbative order
                 Ss[order] = S_k
             # Apply the commutation relations to the final Hamiltonian
-            H_final = (apply_commutation_relations(
-                H_final, self.commutation_relations)).simplify()
-
-        H_final = (apply_substituitions(apply_commutation_relations(H_final, self.commutation_relations).simplify(
-            # Apply the commutation relations to the final Hamiltonian
-        ), ns_comms)).simplify()
+            H_final = (apply_commutation_relations(H_final, self.commutation_relations)).simplify()
+            
+        H_final = (apply_substituitions(apply_commutation_relations(H_final, self.commutation_relations).simplify(), ns_comms)).simplify() # # Apply the commutation relations to the final Hamiltonian
 
         # Store the results
         self.__max_order = max_order
@@ -454,6 +489,7 @@ class EffectiveFrame:
         self.__has_mask = mask is not None
         self.__Hs = Hs
         self.__Vs = Vs
+        self.__dtSs = dtSs
         self.__ns = ns_comms
         self.__commutation_relations = self.commutation_relations
 
