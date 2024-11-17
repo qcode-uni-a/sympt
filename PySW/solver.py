@@ -58,7 +58,6 @@ from tabulate import tabulate
 from sympy import (Rational as sp_Rational, factorial as sp_factorial,
                    nsimplify as sp_nsimplify, simplify as sp_simplify)
 # import deep copy
-import sympy as sp
 from copy import copy
 
 
@@ -142,7 +141,7 @@ def get_S(H0_expr, equation_to_solve, correct_denominator=False):
             else:
                 corrected_S = 0
                 for term in S_mat[uu, vv].expand().as_ordered_terms():
-                    freq_term = (extract_frequencies(term) * (-I / t * hbar)).cancel()  # We assume that the argument for the exponential is in the form of exp(i/hbar Frequency t)
+                    freq_term = (extract_frequencies(term) * (-I / t * hbar)).cancel()  # We assume that the argument for the exponential is in the form of exp(i/hbar Energy t)
                     corrected_S += term / (denom + freq_term)
                 S_mat[uu, vv] = corrected_S
 
@@ -189,8 +188,15 @@ class EffectiveFrame:
         subspaces : list, optional
             A list of subspaces to consider (default is None).
         """
-        self.H_input = H
-        self.V_input = V
+        v = V if V is not None else 0
+        sint_cost_dict = {k : - I * Rational(1,2) * (exp(I * k.args[0]) - exp(-I * k.args[0])) for k in (H + v).atoms(sin) if k.has(t)}
+        sint_cost_dict.update({k : Rational(1,2) * (exp(I * k.args[0]) + exp(-I * k.args[0])) for k in (H + v).atoms(cos) if k.has(t)})
+
+        self.H_input = H.subs(sint_cost_dict)
+        self.V_input = V.subs(sint_cost_dict) if V is not None else V
+
+        del v
+        del sint_cost_dict
 
         self.subspaces = subspaces
         self.__return_form = 'operator'
@@ -333,7 +339,7 @@ class EffectiveFrame:
         self.__do_time_dependent = np_any([v.is_time_dependent for k, v in Hs.items() if k != 0]) or np_any([v.is_time_dependent for k, v in Vs.items() if k != 0])
 
         if self.__do_time_dependent:
-            freqs_orders = [get_order(exponential.args[0])[0] for exponential in (self.__H_old + self.__V_old).atoms(exp)]
+            freqs_orders = [get_order(exponential.args[0])[0] for exponential in (self.__H_old + self.__V_old).atoms(exp) if exponential.has(t)]
             if len(set(freqs_orders)) > 1:
                 raise ValueError('The Hamiltonian contains multiple frequencies with different orders. This is not supported yet.')
             self.__frequency_order = freqs_orders[0]
@@ -398,11 +404,11 @@ class EffectiveFrame:
         # Extract the number operators from  the zeroth-order Hamiltonian
         H0_expr, ns_comms = extract_ns(H0_expr, self.__structure)
         H0_expr = H0_expr.simplify()
-        H_final = H0_expr
+
+        Hs_final = {0 : H0_expr}
 
         # Iterate over the perturbative orders
         for order in trange(1, max_order + 1, desc='Solving for each order'):
-
             # Compute the partitions for the perturbative order
             set_of_keys = partitions(order)
             # Initialize the operator B_k for the perturbative order
@@ -417,11 +423,11 @@ class EffectiveFrame:
                     B_k += Vk
                     # If do_time_dependent
                     if self.__do_time_dependent:
-                        dtSs[order + self.__frequency_order] = Ss.get(order, Expression()).diff(t)
-                        B_k -= I * hbar * dtSs.get(order - self.__frequency_order, Expression())
+                        # dtSs[order + self.__frequency_order] = Ss.get(order, Expression()).diff(t)
+                        B_k -= I * hbar * dtSs.get(order, Expression())
 
                     # Add the perturbative Hamiltonian to the final Hamiltonian
-                    H_final += Hs.get(key[0], Expression())
+                    Hs_final[key[0]] = Hs_final.get(key[0], Expression()) + Hs.get(key[0], Expression())
                     continue
 
                 # Compute the nestedness of the partition
@@ -432,13 +438,13 @@ class EffectiveFrame:
                     # Compute the nested commutator for the regular Schrieffer-Wolff transformation
                     B_k = (B_k + nest_commute(key, is_nestedness_even) * factorials[nestedness]).simplify()
                     # Compute the nested commutator for the regular Schrieffer-Wolff transformation
-                    H_final = (H_final + nest_commute(key, not is_nestedness_even) * factorials[nestedness]).simplify()
+                    Hs_final[order] = (Hs_final.get(order, Expression()) + nest_commute(key, not is_nestedness_even) * factorials[nestedness]).simplify()
 
                     if self.__do_time_dependent:
                         if is_nestedness_even:
                             B_k = (B_k - I * hbar * nest_commute(key, 2) * factorials[nestedness + 1]).simplify()
                         else:
-                            H_final = (H_final - I * hbar * nest_commute(key, 2) * factorials[nestedness + 1]).simplify()
+                            Hs_final[order] = (Hs_final.get(order, Expression()) - I * hbar * nest_commute(key, 2) * factorials[nestedness + 1]).simplify()
                             
                 # If the full diagonalization or mask routine is used
                 else:
@@ -462,7 +468,7 @@ class EffectiveFrame:
                     # Add the nested commutator to the operator B_k
                     B_k = (B_k + new_bk).simplify()
                     # Add the nested commutator to the final Hamiltonian
-                    H_final = (H_final + new_hf).simplify()
+                    Hs_final[order] = (Hs_final.get(order, Expression()) + new_hf).simplify()
 
             if B_k.expr.shape[0] != 0:
                 # Apply the commutation relations to the operator B_k
@@ -477,14 +483,16 @@ class EffectiveFrame:
                 # Store the anti-Hermitian operator S for the perturbative order
                 Ss[order] = S_k
             # Apply the commutation relations to the final Hamiltonian
-            H_final = (apply_commutation_relations(H_final, self.commutation_relations)).simplify()
+            Hs_final[order] = (apply_commutation_relations(Hs_final.get(order, Expression()), self.commutation_relations)).simplify()
             
-        H_final = (apply_substituitions(apply_commutation_relations(H_final, self.commutation_relations).simplify(), ns_comms)).simplify() # # Apply the commutation relations to the final Hamiltonian
+        Hs_final ={
+            k: (apply_substituitions(apply_commutation_relations(v, self.commutation_relations).simplify(), ns_comms)).simplify() for k, v in Hs_final.items()
+        }
 
         # Store the results
         self.__max_order = max_order
         self.__S = Ss
-        self.__H_final = H_final
+        self.__Hs_final = Hs_final
         self.__full_diagonalization = full_diagonalization
         self.__has_mask = mask is not None
         self.__Hs = Hs
@@ -607,7 +615,7 @@ class EffectiveFrame:
 
         return_form = self.__return_form if return_form is None else return_form
 
-        if not hasattr(self, '_EffectiveFrame__H_final'):
+        if not hasattr(self, '_EffectiveFrame__Hs_final'):
             raise AttributeError(
                 'The Hamiltonian has not been solved yet. Please run the solver method first.')
 
@@ -615,27 +623,30 @@ class EffectiveFrame:
             if hasattr(self, '_EffectiveFrame__H_operator_form'):
                 return self.__H_operator_form
 
-            self.__H_operator_form = self.__prepare_result(
-                self.__H_final, return_form)
+            self.__H_operator_form_corrections = {k: self.__prepare_result(v, return_form) for k, v in self.__Hs_final.items()}
+            self.__H_operator_form = np_sum(list(self.__H_operator_form_corrections.values()))
             self.H = self.__H_operator_form
+            self.H_corrections = self.__H_operator_form_corrections
 
         elif return_form == 'matrix':
             if hasattr(self, '_EffectiveFrame__H_matrix_form'):
                 return self.__H_matrix_form
-
-            self.__H_matrix_form = self.__prepare_result(
-                self.__H_final, return_form)
+            
+            self.__H_matrix_form_corrections = {k: self.__prepare_result(v, return_form) for k, v in self.__Hs_final.items()}
+            self.__H_matrix_form = np_sum(list(self.__H_matrix_form_corrections.values()))
             self.H = self.__H_matrix_form
+            self.H_corrections = self.__H_matrix_form_corrections
+
 
         elif 'dict' in return_form:
             extra = return_form.split(
                 '_')[1] if '_' in return_form else self.__return_form
             if hasattr(self, '_EffectiveFrame__H_dict_form') and self.__H_dict_form.get(extra) is not None:
                 return self.__H_dict_form[extra]
-
+            H_final = np_sum(list(self.__Hs_final.values()))
             self.__H_dict_form = {}
             self.__H_dict_form[extra] = self.__prepare_result(
-                self.__H_final, 'dict'+f'_{extra}')
+                H_final, 'dict'+f'_{extra}')
             self.H = self.__H_dict_form[extra]
         else:
             raise ValueError('Invalid return form. Please choose either: ' + ', '.join(
