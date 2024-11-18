@@ -52,7 +52,7 @@ from numpy import (any as np_any, all as np_all, array as np_array,
                    ndarray as np_ndarray, logical_not as np_logical_not,
                    ones as np_ones, vectorize as np_vectorize,
                    zeros as np_zeros, nonzero as np_nonzero)
-from sympy import (Expr, Mul, Add, Pow, Symbol, Matrix, exp, latex, diag as sp_diag, cos, sin, factor_terms as sp_factor_terms)
+from sympy import (Expr, Mul, Add, Pow, Symbol, Matrix, exp, latex, diag as sp_diag, cos, sin, factor_terms as sp_factor_terms, conjugate)
 from sympy.core.numbers import (
     Float, Half, ImaginaryUnit, Integer, One, Rational, Pi)
 from sympy.physics.quantum import Dagger, Operator
@@ -166,6 +166,26 @@ def get_order(factor: Pow):
 
     return base_order * factor.exp, (o_type, o_key)
 
+
+@multimethod
+def get_order(factor: conjugate):
+    """
+    Determines the order of a conjugate expression.
+
+    Parameters
+    ----------
+    factor : conjugate
+        The conjugate expression to evaluate.
+
+    Returns
+    -------
+    tuple
+        The order and its classification ('other').
+    """
+    factor = factor.args[0]
+    if factor.has(Operator):
+        raise ValueError(f"Conjugate of operators are not yet supported.")
+    return get_order(factor)
 
 @multimethod
 def get_order(factor: Symbol):
@@ -334,6 +354,25 @@ def get_count_boson(factor: Pow):
     """
     return get_count_boson(factor.base) * factor.exp
 
+@multimethod
+def get_count_boson(factor: conjugate):
+    """
+    Returns the boson count for a conjugate expression.
+
+    Parameters
+    ----------
+    factor : conjugate
+        The conjugate expression.
+
+    Returns
+    -------
+    int
+        The boson count.
+    """
+    factor = factor.args[0]
+    if factor.has(Operator):
+        raise ValueError(f"Conjugate of operators are not yet supported.")
+    return get_count_boson(factor)
 
 @multimethod
 def get_count_boson(factor: Union[RDSymbol, int, float, complex, Integer, Float, ImaginaryUnit, One, Half, Rational, Pi, exp]):
