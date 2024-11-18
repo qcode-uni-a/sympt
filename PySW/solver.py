@@ -450,13 +450,20 @@ class EffectiveFrame:
                 else:
                     # Compute the nested commutator for the full diagonalization or mask routine
                     new_commutator_odd = nest_commute(
-                        key, nestedness % 2 != 0) * factorials[nestedness]
+                        key, not is_nestedness_even) * factorials[nestedness]
                     # Compute the nested commutator for the full diagonalization or mask routine
                     new_commutator_even = nest_commute(
-                        key, nestedness % 2 == 0) * factorials[nestedness]
+                        key, is_nestedness_even) * factorials[nestedness]
+
                     # Compute the nested commutator for the full diagonalization or mask routine
-                    new_commutator = (new_commutator_odd +
-                                      new_commutator_even).simplify()
+                    new_commutator = new_commutator_odd + new_commutator_even
+                    if self.__do_time_dependent:
+                        # Compute the nested commutator for the dS/dt term
+                        new_commutator_dS = nest_commute(key, 2) * factorials[nestedness + 1]
+                        new_commutator -= I * hbar * new_commutator_dS
+
+                    new_commutator = new_commutator.simplify()
+
                     if mask is not None:                                                           # If the mask is used
                         # Apply the mask to the nested commutator
                         new_bk, new_hf = mask.apply_mask(new_commutator)
@@ -626,7 +633,7 @@ class EffectiveFrame:
             self.__H_operator_form_corrections = {k: self.__prepare_result(v, return_form) for k, v in self.__Hs_final.items()}
             self.__H_operator_form = np_sum(list(self.__H_operator_form_corrections.values()))
             self.H = self.__H_operator_form
-            self.H_corrections = self.__H_operator_form_corrections
+            self.corrections = self.__H_operator_form_corrections
 
         elif return_form == 'matrix':
             if hasattr(self, '_EffectiveFrame__H_matrix_form'):
@@ -635,7 +642,7 @@ class EffectiveFrame:
             self.__H_matrix_form_corrections = {k: self.__prepare_result(v, return_form) for k, v in self.__Hs_final.items()}
             self.__H_matrix_form = np_sum(list(self.__H_matrix_form_corrections.values()))
             self.H = self.__H_matrix_form
-            self.H_corrections = self.__H_matrix_form_corrections
+            self.corrections = self.__H_matrix_form_corrections
 
 
         elif 'dict' in return_form:
@@ -701,8 +708,10 @@ class EffectiveFrame:
                     continue
 
                 nestedness = len(key) - 1
-                result += (nest_commute(key) *
-                           factorials[nestedness]).simplify()
+                result += nest_commute(key) * factorials[nestedness]
+                if self.__do_time_dependent:
+                    result -= I * hbar * nest_commute(key, 2) * factorials[nestedness + 1]
+                result = result.simplify()
 
         result = (apply_commutation_relations(
             result, self.commutation_relations)).simplify()
