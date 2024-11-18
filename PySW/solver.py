@@ -56,7 +56,8 @@ from .utils import *
 from tqdm import tqdm, trange
 from tabulate import tabulate
 from sympy import (Rational as sp_Rational, factorial as sp_factorial,
-                   nsimplify as sp_nsimplify, simplify as sp_simplify)
+                   nsimplify as sp_nsimplify, simplify as sp_simplify,
+                   Add as sp_Add)
 # import deep copy
 from copy import copy
 
@@ -621,6 +622,7 @@ class EffectiveFrame:
         """
 
         return_form = self.__return_form if return_form is None else return_form
+        self.__Hs_final = {k: v for k, v in self.__Hs_final.items() if v.expr.shape[0] != 0}
 
         if not hasattr(self, '_EffectiveFrame__Hs_final'):
             raise AttributeError(
@@ -628,6 +630,7 @@ class EffectiveFrame:
 
         if return_form == 'operator':
             if hasattr(self, '_EffectiveFrame__H_operator_form'):
+                self.corrections = self.__H_operator_form_corrections
                 return self.__H_operator_form
 
             self.__H_operator_form_corrections = {k: self.__prepare_result(v, return_form) for k, v in self.__Hs_final.items()}
@@ -637,10 +640,11 @@ class EffectiveFrame:
 
         elif return_form == 'matrix':
             if hasattr(self, '_EffectiveFrame__H_matrix_form'):
+                self.corrections = self.__H_matrix_form_corrections
                 return self.__H_matrix_form
             
             self.__H_matrix_form_corrections = {k: self.__prepare_result(v, return_form) for k, v in self.__Hs_final.items()}
-            self.__H_matrix_form = np_sum(list(self.__H_matrix_form_corrections.values()))
+            self.__H_matrix_form = sp_Add(*list(self.__H_matrix_form_corrections.values()))
             self.H = self.__H_matrix_form
             self.corrections = self.__H_matrix_form_corrections
 
