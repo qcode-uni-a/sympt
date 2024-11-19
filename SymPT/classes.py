@@ -1,5 +1,5 @@
 """
-Title: Classes for PySW package
+Title: Classes for SymPT package
 Date: 17 October 2024
 Authors:
 - Giovanni Francesco Diotallevi
@@ -9,7 +9,7 @@ DOI: doi.doi.doi
 
 Description:
 
-This module defines various mathematical and quantum operator classes for use within the PySW package.
+This module defines various mathematical and quantum operator classes for use within the SymPT package.
 The core classes provide functionality to manipulate symbolic expressions, matrix operators, and basis
 representations used in quantum mechanics or related fields. The module leverages SymPy and NumPy to 
 handle symbolic mathematics and numerical operations, offering a foundation for more complex operations 
@@ -1333,7 +1333,7 @@ class RDSymbol(Symbol):
         order = kwargs.pop('order', 0)
         overwrite = kwargs.pop('overwrite', False)
         if name in global_variables and not overwrite:
-            raise ValueError(f'{name} is a reserved name. Import "{name}" from PySW.Variables instead.')
+            raise ValueError(f'{name} is a reserved name. Import "{name}" from SymPT.Variables instead.')
         obj = Symbol.__new__(cls, name, *args, **kwargs)
         if isinstance(order, complex):
             raise ValueError('Order must be real.')
