@@ -1,5 +1,5 @@
 
-# PySW
+# SymPT
 
 ## Table of Contents
 - [Overview](#overview)
@@ -37,8 +37,8 @@ tqdm==4.66.5
 To install the package, clone the repository and install the required dependencies. You can do this via pip:
 
 ```bash
-git clone https://github.com/qcode-uni-a/PySW.git
-cd PySW
+git clone https://github.com/qcode-uni-a/SymPT.git
+cd SymPT
 pip install .
 ```
 
@@ -82,7 +82,7 @@ Where:
 #### Example Code
 
 ```python
-from pysw import RDSymbol, BosonOp, Dagger, RDBasis, EffectiveFrame
+from SymPT import RDSymbol, BosonOp, Dagger, RDBasis, EffectiveFrame
 import sympy as sp
 
 # Define symbols and operators
