@@ -1333,7 +1333,7 @@ class RDSymbol(Symbol):
         order = kwargs.pop('order', 0)
         overwrite = kwargs.pop('overwrite', False)
         if name in global_variables and not overwrite:
-            raise ValueError(f'{name} is a reserved name. Import "{name}" from SymPT.Variables instead.')
+            raise ValueError(f'{name} is a reserved name. Import "{name}" from SymPT instead.')
         obj = Symbol.__new__(cls, name, *args, **kwargs)
         if isinstance(order, complex):
             raise ValueError('Order must be real.')
