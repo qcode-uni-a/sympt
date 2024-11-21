@@ -460,7 +460,7 @@ class Block:
         bool
             True if the block contains a diagonal component, otherwise False.
         """
-        inf_diagonal = np_sum(list(self.deltas.values())) == 0
+        inf_diagonal = np_all(list(self.deltas.values()) == np_zeros(len(self.deltas.values())))
         fin_diagonal = np_sum(self.fin.diagonal()) != 0
 
         return inf_diagonal and fin_diagonal
