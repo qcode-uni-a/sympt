@@ -57,7 +57,7 @@ from tqdm import tqdm, trange
 from tabulate import tabulate
 from sympy import (Rational as sp_Rational, factorial as sp_factorial,
                    nsimplify as sp_nsimplify, simplify as sp_simplify,
-                   Add as sp_Add)
+                   Add as sp_Add, Matrix as sp_Matrix)
 # import deep copy
 from copy import copy
 
@@ -189,7 +189,7 @@ class EffectiveFrame:
         subspaces : list, optional
             A list of subspaces to consider (default is None).
         """
-        v = V if V is not None else 0
+        v = V if V is not None else sp_zeros(*H.shape) if isinstance(H, sp_Matrix) else 0
         sint_cost_dict = {k : - I * Rational(1,2) * (exp(I * k.args[0]) - exp(-I * k.args[0])) for k in (H + v).atoms(sin) if k.has(t)}
         sint_cost_dict.update({k : Rational(1,2) * (exp(I * k.args[0]) + exp(-I * k.args[0])) for k in (H + v).atoms(cos) if k.has(t)})
 
