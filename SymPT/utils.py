@@ -709,34 +709,6 @@ class memoized(object):
             return value
 
 
-def partitions(n):
-    """
-    Generates all partitions of the integer n.
-
-    Parameters
-    ----------
-    n : int
-        The integer to partition.
-
-    Returns
-    -------
-    list
-        A list of tuples representing all unique partitions of n.
-    """
-
-    # Base case: if n is 0, return a single partition containing only (0,)
-    if n == 0:
-        return [(0,)]
-
-    # Start with the partition of n as a single tuple
-    parts = [(n,)]
-    for i in range(1, n + 1):           # Start from 1 to avoid infinite recursion with zero
-        for p in partitions(n - i):
-            parts.append(p + (i,))
-
-    return parts
-
-
 def commutator(A: Union[MulGroup, Expression], B: Union[MulGroup, Expression]) -> Expression:
     """
     Computes the commutator of two operators A and B.
@@ -876,5 +848,102 @@ def extract_frequencies(term):
         return 0
     if len(exponentials_atoms) > 1:
         raise ValueError("The term contains more than one exponential. If you see this error, please report it to the developers.")
+'''
+---------------------------------------------------------------------------------------------------------------------------------------
+                                                        Generate Partitions
+    TO-DOS:
+        [ ] 
+---------------------------------------------------------------------------------------------------------------------------------------
+'''
+
+def partitions(n):
+    """
+    Generates all partitions of the integer n. (Mostly used in keeping track of nested commutators)
+
+    Parameters
+    ----------
+    n : int
+        The integer to partition.
+
+    Returns
+    -------
+    list
+        A list of tuples representing all unique partitions of n.
+    """
+
+    # Base case: if n is 0, return a single partition containing only (0,)
+    if n == 0:
+        return [(0,)]
+
+    # Start with the partition of n as a single tuple
+    parts = [(n,)]
+    for i in range(1, n + 1):           # Start from 1 to avoid infinite recursion with zero
+        for p in partitions(n - i):
+            parts.append(p + (i,))
+
+    return parts
 
     return exponentials_atoms.pop().args[0]
+
+def get_partitiions_3(k):
+    """Returns a list of tuples with 3 elements. 
+    The sum of the list of the tuples is always equal to k
+    """
+    # avoid duplicate permutations
+    results = set()
+
+    # Iterate through possible values for x, y, and z
+    for x in range(k + 1):  # x can be between 0 and l
+        for y in range(k + 1 - x):  # y can be between 0 and k-x
+            z = k - x - y  # z is determined by k 
+            results.add((x, y, z))  # Add the combination to the set
+
+    
+    permutations_set = set()
+    for triplet in results: # Generate all unique permutations
+        permutations_set.update(permutations(triplet))
+    
+    # Convert set to a sorted list (optional, for consistent order)
+    return sorted(permutations_set)
+
+def get_partitions_np1(n, M):
+    """
+    Generate all possible permutations of n+1 numbers whose sum is <= M.
+    
+    Parameters:
+        n (int): Number of variables to distribute
+        M (int): Maximum total sum allowed
+    
+    Returns:
+        list: Sorted list of unique permutations with sum <= M
+    """
+    results = set()
+    def find_combinations(current, remaining_sum, depth):
+        """
+        Recursive helper function to generate all combinations.
+        
+        Parameters:
+            current (list): Current partial combination.
+            remaining_sum (int): Maximum remaining sum that can be allocated.
+            depth (int): Current depth in recursion.
+        """
+        if depth == n:  # Base case, determine the last value
+            for last_value in range(remaining_sum + 1):
+                candidate = current + [last_value]
+                if sum(candidate) <= M:
+                    results.add(tuple(candidate))
+            return
+        
+        for x in range(remaining_sum + 1):  # Each variable can range from 0 to remaining_sum
+            find_combinations(current + [x], remaining_sum - x, depth + 1)
+    
+    # Start recursion
+    find_combinations([], M, 0)
+    
+    # Generate permutations for each valid combination
+    permutations_set = set()
+    for combination in results:
+        permutations_set.update(permutations(combination))
+    
+    # Return as sorted list for consistency
+    return sorted(permutations_set)
