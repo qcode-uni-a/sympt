@@ -44,7 +44,7 @@ sympy==1.13.3
 
 
 # Standard library imports
-from itertools import product
+from itertools import product, permutations
 from typing import Union
 
 # Third-party imports
