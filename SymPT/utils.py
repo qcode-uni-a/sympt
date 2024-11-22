@@ -31,6 +31,8 @@ Functions:
 14. `get_perturbative_expression`: Constructs a perturbative expansion of a given expression.
 15. `get_matrix`: Generates matrix representations for quantum operators.
 16. `get_boson_matrix`: Generates matrix representations for bosonic operators.
+17. 'get_partitiions_3': Generates list of length-3 partitions whose sum is fixed by input parameter.
+18. 'get_partitions_np1': Generates list of specified length whose sum is less or equal than provided parameter.
 
 Dependencies:
 -------------
