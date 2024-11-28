@@ -729,6 +729,14 @@ def commutator(A: Union[MulGroup, Expression], B: Union[MulGroup, Expression]) -
     """
     return (A * B - B * A).simplify()
 
+def create_nest_commute(Os_dicts, Ss):
+    def nest_commute(parts, Os_index):
+        if len(parts) == 2:
+            Os = Os_dicts[Os_index]
+            return commutator(Os.get(parts[0], 0), Ss[parts[1]])
+        return commutator(nest_commute(parts[:-1], Os_index), Ss[parts[-1]])
+    return memoized(nest_commute)
+
 
 def display_dict(dictionary):
     """
@@ -850,6 +858,9 @@ def extract_frequencies(term):
         return 0
     if len(exponentials_atoms) > 1:
         raise ValueError("The term contains more than one exponential. If you see this error, please report it to the developers.")
+    
+    return exponentials_atoms.pop().args[0]
+
 '''
 ---------------------------------------------------------------------------------------------------------------------------------------
                                                         Generate Partitions
@@ -884,8 +895,6 @@ def partitions(n):
             parts.append(p + (i,))
 
     return parts
-
-    return exponentials_atoms.pop().args[0]
 
 def get_partitiions_3(k):
     """Returns a list of tuples with 3 elements. 

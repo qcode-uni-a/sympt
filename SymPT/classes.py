@@ -914,8 +914,13 @@ class MulGroup(Expr):
             # Multiply the infinite parts of the groups.
             mul_inf = self.inf * other.inf
             # Create a dictionary for replacing the number operators with the shifted values.
-            subs_dict = dict(zip(self.Ns, nsimplify(self.Ns - self.delta)))
-            mul_fn = self.fn * other.fn.subs(subs_dict)
+            if other.fn.has(BosonOp):
+                subs_dict = dict(zip(self.Ns, nsimplify(self.Ns - self.delta)))
+                # Test if for big expressions, using replace with Wild Cards is faster
+                # For small expressions and a single number operator, the current method is faster
+                mul_fn = self.fn * other.fn.subs(subs_dict)
+            else:
+                mul_fn = self.fn * other.fn
             return MulGroup(mul_fn, mul_inf, self.delta + other.delta, self.Ns)
         if isinstance(other, Expression):
             # Other is a numpy array of MulGroups -> Expression
