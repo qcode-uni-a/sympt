@@ -46,7 +46,7 @@ from sympy import (
     MutableDenseMatrix, eye, I, sqrt,
     Rational, nsimplify, zeros as sp_zeros,
     latex as sp_latex, simplify as sp_simplify,
-    diff as sp_diff
+    diff as sp_diff, Function as sp_Function
 )
 
 from sympy.matrices.dense import matrix_multiply_elementwise as sp_elementwise
@@ -61,11 +61,177 @@ from numpy import (
     isin as np_isin,
     sum as np_sum,
     zeros as np_zeros,
+    prod as np_prod,
     logical_not as np_logical_not
 )
 
 # Importing additional utility from itertools
 from itertools import product
+
+class BExpression:
+    def __init__(self, expr=None):
+        self.expr = np_empty(0, dtype=object) if expr is None else expr
+        self.expr = self.expr[self.expr != 0]
+
+    def __add__(self, other):
+        if isinstance(other, BExpression):
+            return BExpression(np_concatenate([self.expr, other.expr]))
+        if isinstance(other, BGroup):
+            return BExpression(np_append(self.expr, other))
+        if not np_any(other):
+            return self
+        raise ValueError('Invalid type for addition.')
+    
+    def simplify(self, return_dict=False):
+        
+        b_groups = self.expr                                                                    # Get the multiplicative groups from the expression.
+        # If there are no multiplicative groups, return an empty expression.
+        if not np_any(b_groups):
+            return BExpression()
+
+        coeffs_part = np_vectorize(lambda x: x.coeff)(b_groups)                                  # Get the coefficients from the groups.
+        thetas_part = np_vectorize(lambda x: x.thetas, otypes=[object])(b_groups)
+        masks_part = np_vectorize(lambda x: x.masks, otypes=[object])(b_groups)
+
+        f = b_groups[0].f
+        mask = b_groups[0].mask
+
+        result_dict = {}                                                                        # Create an empty dictionary to store the simplified groups.
+        for coeffs, thetas, masks in zip(coeffs_part, thetas_part, masks_part):
+            # Create a unique key based on the infinite and delta parts.
+            key = (tuple(thetas), tuple(masks))
+            # If the key already exists in the result dictionary, add the function to the existing entry.
+            if key in result_dict:
+                # Update the dictionary with the new function.
+                result_dict[key] = result_dict[key] + coeffs
+            else:
+                # Otherwise, create a new entry with the current function.
+                result_dict[key] = coeffs
+
+        # If the return_dict flag is set, return the dictionary of simplified groups.
+        if return_dict:
+            # Return the dictionary of simplified groups.
+            return result_dict
+
+        return BExpression(np_array([BGroup(coeffs, list(thetas), np_array(masks), f, mask) for (thetas, masks), coeffs in result_dict.items()]))
+
+    
+    def __sub__(self, other):
+        return self + (-other)
+
+    def __neg__(self):
+        return BExpression(-self.expr)
+
+    def __mul__(self, other):
+
+        if isinstance(other, BExpression):
+            result_expression = (
+                self.expr[None, :] * other.expr[:, None]).flatten()
+            return BExpression(result_expression)
+        return BExpression(self.expr * other)
+
+    def __rmul__(self, other):
+        return self.__mul__(other)
+    
+    def doit(self):
+        return np_sum(np_vectorize(lambda x: x.doit(), otypes=[object])(self.expr)).simplify()
+
+    def __str__(self):
+        if len(self.expr) == 0:
+            return '0'
+        return ' + '.join([str(expr) for expr in self.expr])
+
+    def _repr_latex_(self):
+        if len(self.expr) == 0:
+            return '$0$'
+        return '$' + ' + '.join([sp_latex(expr) for expr in self.expr]) + '$'
+
+class BGroup(Expr):
+
+    @property
+    def coeff(self):
+        return self.args[0]
+
+    @property
+    def thetas(self):
+        return self.args[1]
+    
+    @property
+    def masks(self):
+        return self.args[2]
+    
+    @property
+    def f(self):
+        return self.args[3]
+
+    @property
+    def mask(self):
+        return self.args[4]
+
+    def __new__(cls, coeff, thetas, masks:np_ndarray, f=None, mask=None):
+
+        if not np_any(coeff) or len(thetas) == 0:
+            return 0
+
+        obj = Expr.__new__(cls, coeff, thetas, masks, f, mask)
+
+        return obj
+
+    def __neg__(self):
+        return BGroup(-self.coeff, self.thetas, self.masks, self.f, self.mask)
+
+    def __add__(self, other):
+
+        if isinstance(other, BGroup) and other.thetas == self.thetas and np_all(self.masks == other.masks):
+            return BGroup(self.coeff + other.coeff, self.thetas, self.masks, self.f, self.mask)
+        
+        if isinstance(other, BExpression):
+            # Other is a numpy array of MulGroups -> Expression
+            return other + self
+        return BExpression(np_array([self, other], dtype=object))
+
+    def __sub__(self, other):
+        return (self + (-other))
+
+    def __mul__(self, other):
+
+        if isinstance(other, BGroup):
+            
+            if self.masks[-1] == 0 and self.masks[-1] == other.masks[0]:
+                new_theta_middle = self.thetas[-1] + other.thetas[0]
+                new_thetas = self.thetas[:-1] + [new_theta_middle] + other.thetas[1:]
+                new_masks = np_concatenate([self.masks[:-1], other.masks])
+                return BGroup(self.coeff * other.coeff, new_thetas, new_masks, self.f, self.mask)
+            
+            new_thetas = self.thetas + other.thetas
+            new_masks = np_concatenate([self.masks, other.masks])
+            return BGroup(self.coeff * other.coeff, new_thetas, new_masks, self.f, self.mask)
+        
+        if isinstance(other, BExpression):
+            return Expression(self * other.expr)
+        
+        return BGroup(self.coeff * other, self.thetas, self.masks, self.f, self.mask)
+
+    def __rmul__(self, other):
+        return self.__mul__(other)
+    
+    def doit(self):
+        result = []
+        for thetas, mask in zip(self.thetas, self.masks):
+            Zs = self.f(thetas)
+            if mask:
+                Zs = self.mask.apply_mask(Zs)[1]
+            result.append(Zs)
+
+        return np_prod(result) * self.coeff
+
+
+    def _latex(self, printer):
+        result = [Mul(*[Operator(f'z_{o}') for o in theta]) for  theta in self.thetas]
+        result = Mul(*np_vectorize(lambda i: sp_Function('B')(result[i]) if self.masks[i] else result[i])(range(len(result))))
+        return f'{printer._print(self.coeff * result)}'
+
+
 
 class Blocks:
     """
@@ -673,6 +839,22 @@ class Expression:
             return result_dict
 
         return Expression(np_array([MulGroup(fn, np_array(inf), np_array(delta), Ns) for (inf, delta), fn in result_dict.items()]))
+    
+    def subs(self, substitutions):
+        """
+        Substitutes variables in the expression with given values.
+
+        Parameters
+        ----------
+        substitutions : dict
+            A dictionary of substitutions to apply to the expression.
+
+        Returns
+        -------
+        Expression
+            A new `Expression` object with the substitutions applied.
+        """
+        return Expression(np_vectorize(lambda x: x.subs(substitutions), otypes=[object])(self.expr))
 
     def __sub__(self, other):
         return self + (-other)
@@ -947,6 +1129,22 @@ class MulGroup(Expr):
         if not self.is_time_dependent:
             return MulGroup(0, self.inf, self.delta, self.Ns)
         return MulGroup(sp_diff(self.fn, theta), self.inf, self.delta, self.Ns)
+    
+    def subs(self, substitutions):
+        """
+        Substitutes variables in the group with given values.
+
+        Parameters
+        ----------
+        substitutions : dict
+            A dictionary of substitutions to apply to the group.
+
+        Returns
+        -------
+        MulGroup
+            A new `MulGroup` object with the substitutions applied.
+        """
+        return MulGroup(self.fn.subs(substitutions), self.inf, self.delta, self.Ns)
 
     def _sympystr(self, printer):
         return f'{self.fn} * {Mul(*self.inf)}'
@@ -1062,7 +1260,7 @@ class RDBasis:
         If the matrix to be projected has incorrect dimensions.
     """
 
-    def __init__(self, name: str, dim: int=None, projector_form=False, fermionic=False):
+    def __init__(self, name: str, dim: int=None, projector_form=False):
         """
         Parameters
         ----------
@@ -1073,24 +1271,13 @@ class RDBasis:
         """
         self.name = name
         names = None
-        self.is_fermionic = fermionic
-        if fermionic:
-            names = [
-                f'{{n_{{{name}}}^{{-}}}}',
-                f'{name}',
-                f'{{{name} ^ {{\\dagger}} }}',
-                f'{{n_{{{name}}}^{{+}}}}'
-            ]
-            if dim is not None and dim != 2:
-                print('Warning: Fermionic basis is only available in dimension 2 and will be set to 2.')
-            projector_form = True
-            dim = 2
-        
+
         if dim is None:
             raise ValueError('Dimension must be provided.')
 
         self.dim = dim
-        matrix_basis = self.get_gell_mann() if not projector_form else self.get_projector_matrices()
+        projector_matrices = self.get_projector_matrices()
+        matrix_basis = self.get_gell_mann() if not projector_form else projector_matrices
         
         names = [f'{name}_{i}' for i in range(dim**2)] if names is None else names
 
@@ -1103,6 +1290,9 @@ class RDBasis:
         else:
             self.basis_ling_alg_norm = nsimplify(
                 (self.basis[1].matrix.T.conjugate() @ self.basis[1].matrix).trace())
+        
+        self.__elements_projected = np_array([[self._project(projector_matrices[i * self.dim + j]) for j in range(self.dim)] for i in range(self.dim)], dtype=object)
+        
 
     def get_projector_matrices(self):
         """
@@ -1158,7 +1348,7 @@ class RDBasis:
 
         return matrices
 
-    def project(self, to_be_projected: Matrix):
+    def _project(self, to_be_projected: Matrix):
         """
         Projects a given matrix onto the basis.
 
@@ -1192,6 +1382,27 @@ class RDBasis:
             return 1
         return basis_coeffs.dot(self.basis)
 
+    def project(self, to_be_projected: Matrix):
+        """
+        Projects a given matrix onto the basis.
+
+        Parameters
+        ----------
+        to_be_projected : Matrix
+            The matrix to be projected onto the basis.
+
+        Returns
+        -------
+        Expression
+            A symbolic expression representing the projection.
+
+        Raises
+        ------
+        ValueError
+            If the matrix to be projected has incorrect dimensions.
+        """
+        coeffs =  np_array(to_be_projected, dtype=object)
+        return np_sum(coeffs * self.__elements_projected)
 
 class RDCompositeBasis:
     """
@@ -1255,7 +1466,7 @@ class RDCompositeBasis:
         self.basis = []
 
         self.basis_matrices = []
-        # Iterate over the Cartesian product of the basis elements.
+        # Iterate over the Cartesian product of __elements_projectedthe basis elements.
         for p in product(*[basis.basis for basis in bases]):
             # Create the symbolic composite basis elements.
             self.basis.append(Mul(*[1 if p_.is_identity else p_ for p_ in p]))
@@ -1274,8 +1485,16 @@ class RDCompositeBasis:
             # Compute the normalization factor based on the trace of the matrix representation of the basis elements.
             self.basis_ling_alg_norm = nsimplify(
                 (self.basis_matrices[1].T.conjugate() @ self.basis_matrices[1]).trace())
+            
+        self.__elements_projected = []
+        for i in range(self.dim):
+            for j in range(self.dim):
+                mat = sp_zeros(self.dim, self.dim)
+                mat[i, j] = 1
+                self.__elements_projected.append(self._project(mat))
+        self.__elements_projected = np_array(self.__elements_projected, dtype=object).reshape(self.dim, self.dim)
 
-    def project(self, to_be_projected):
+    def _project(self, to_be_projected):
         """
         Projects a given matrix onto the composite basis.
 
@@ -1313,6 +1532,28 @@ class RDCompositeBasis:
             return 1
 
         return basis_coeffs.dot(self.basis).expand()
+    
+    def project(self, to_be_projected):
+        """
+        Projects a given matrix onto the composite basis.
+
+        Parameters
+        ----------
+        to_be_projected : Matrix
+            The matrix to be projected onto the composite basis.
+
+        Returns
+        -------
+        Expression
+            A symbolic expression representing the projection.
+
+        Raises
+        ------
+        ValueError
+            If the matrix to be projected has incorrect dimensions.
+        """
+        coeffs =  np_array(to_be_projected, dtype=object)
+        return np_sum(coeffs * self.__elements_projected).cancel().expand()
 
 
 class RDSymbol(Symbol):

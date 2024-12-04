@@ -53,15 +53,19 @@ from multimethod import multimethod
 from numpy import (any as np_any, all as np_all, array as np_array,
                    ndarray as np_ndarray, logical_not as np_logical_not,
                    ones as np_ones, vectorize as np_vectorize,
-                   zeros as np_zeros, nonzero as np_nonzero)
-from sympy import (Expr, Mul, Add, Pow, Symbol, Matrix, exp, latex, diag as sp_diag, cos, sin, factor_terms as sp_factor_terms, conjugate)
+                   zeros as np_zeros, nonzero as np_nonzero,
+                   prod as np_prod)
+from sympy import (Expr, Mul, Add, Pow, Symbol, Matrix, exp, latex, diag as sp_diag,
+                   cos, sin, factor_terms as sp_factor_terms, conjugate, 
+                   factorial as sp_factorial, Rational as sp_Rational, binomial as sp_binomial,
+                   Mul as sp_Mul)
 from sympy.core.numbers import (
     Float, Half, ImaginaryUnit, Integer, One, Rational, Pi)
 from sympy.physics.quantum import Dagger, Operator
 from sympy.physics.quantum.boson import BosonOp
 
 # Local application/library imports
-from .classes import MulGroup, RDSymbol, RDOperator, Expression, get_matrix
+from .classes import MulGroup, RDSymbol, RDOperator, Expression, get_matrix, BExpression, BGroup
 
 '''
 ---------------------------------------------------------------------------------------------------------------------------------------
@@ -846,6 +850,7 @@ def get_perturbative_expression(expr, structure, subspaces=None):
         for term in expr_ordered_dict[order]:
             mul_group_term, is_diagonal = domain_expansion(
                 term, structure, subspaces)
+            order = int(order)
             result[order] = (result.get(order, Expression()) +
                              mul_group_term).simplify()
 
@@ -896,65 +901,85 @@ def partitions(n):
 
     return parts
 
-def get_partitiions_3(k):
-    """Returns a list of tuples with 3 elements. 
-    The sum of the list of the tuples is always equal to k
-    """
-    # avoid duplicate permutations
-    results = set()
+# Partitions for Least Action (LA) method
 
-    # Iterate through possible values for x, y, and z
-    for x in range(k + 1):  # x can be between 0 and l
-        for y in range(k + 1 - x):  # y can be between 0 and k-x
-            z = k - x - y  # z is determined by k 
-            results.add((x, y, z))  # Add the combination to the set
+def T(order, lenght):
+    orders = range(1, order + 1)
+    tupples = product(orders, repeat=lenght)
+    return [t for t in tupples if sum(t) == order]
 
-    
-    permutations_set = set()
-    for triplet in results: # Generate all unique permutations
-        permutations_set.update(permutations(triplet))
-    
-    # Convert set to a sorted list (optional, for consistent order)
-    return sorted(permutations_set)
+def P(order):
+    partitions = []
+    for i in range(1, order + 1):
+        partitions.extend(T(order, i))
+    return partitions
 
-def get_partitions_np1(n, M):
-    """
-    Generate all possible permutations of n+1 numbers whose sum is <= M.
-    
-    Parameters:
-        n (int): Number of variables to distribute
-        M (int): Maximum total sum allowed
-    
-    Returns:
-        list: Sorted list of unique permutations with sum <= M
-    """
-    results = set()
-    def find_combinations(current, remaining_sum, depth):
-        """
-        Recursive helper function to generate all combinations.
+'''
+---------------------------------------------------------------------------------------------------------------------------------------
+                                                        Generate Least Action S Equations
+    TO-DOS:
+        [ ]  
+---------------------------------------------------------------------------------------------------------------------------------------
+'''
+
+def E_generator(function=None, mask=None):
+    def E(order):
+        result = BExpression()
+        for theta_vec in P(order):
+            if len(theta_vec) % 2 != 0:
+                continue
+            result = result + BGroup(sp_Rational(2, sp_factorial(len(theta_vec))), [theta_vec], [1], function, mask)
         
-        Parameters:
-            current (list): Current partial combination.
-            remaining_sum (int): Maximum remaining sum that can be allocated.
-            depth (int): Current depth in recursion.
-        """
-        if depth == n:  # Base case, determine the last value
-            for last_value in range(remaining_sum + 1):
-                candidate = current + [last_value]
-                if sum(candidate) <= M:
-                    results.add(tuple(candidate))
-            return
+        for (i, j) in T(order, 2):
+            for theta_vec in P(i):
+                for phi_vec in P(j):
+                    coeff = sp_Rational((-1)**len(phi_vec) , (sp_factorial(len(theta_vec)) * sp_factorial(len(phi_vec))))
+                    result +=  BGroup(coeff, [theta_vec], [1], function, mask) * BGroup(1, [phi_vec], [1], function, mask) 
+        return result
+    return memoized(E)
+
+def V_generator(function=None, mask=None):
+    def V(order):
+        partitions = P(order)
+        result = BExpression()
+        for theta_vec in partitions:
+            coeff = sp_Rational(1, sp_factorial(len(theta_vec)))
+            result = result + (BGroup(coeff , [theta_vec], [0], function, mask)  +  BGroup(coeff * (-1)**len(theta_vec), [theta_vec], [1], function, mask))
         
-        for x in range(remaining_sum + 1):  # Each variable can range from 0 to remaining_sum
-            find_combinations(current + [x], remaining_sum - x, depth + 1)
+        for (i, j) in T(order, 2):
+            for theta_vec in P(i):
+                for phi_vec in P(j):
+                    coeff = sp_Rational((-1)**len(phi_vec) , (sp_factorial(len(theta_vec)) * sp_factorial(len(phi_vec))))
+                    result = result + BGroup(coeff, [theta_vec], [0], function, mask) * BGroup(1, [phi_vec], [1], function, mask) 
+        return result
+    return memoized(V)
+
+def U_generator(function=None, mask=None):
+    V = V_generator(function=function, mask=mask)
+    E = E_generator(function=function, mask=mask)
+
+    def U(order):
+        result = V(order)
+        for theta_vec in P(order):
+            result = result + np_prod([E(o) for o in theta_vec]) * sp_binomial(-sp_Rational(1,2), len(theta_vec))
+
+        for (i, j) in T(order, 2):
+            for theta_vec in P(j):
+                result = result + V(i) * np_prod([E(o) for o in theta_vec]) * sp_binomial(-sp_Rational(1,2), len(theta_vec))
+
+        return result
+    return memoized(U)
+
+def LA_S_generator(function=False, mask=False):
+    U = U_generator(function=function, mask=mask)
     
-    # Start recursion
-    find_combinations([], M, 0)
+    def LA_S(order):
+        result = U(order)
+        for theta_vec in P(order):
+            if len(theta_vec) == 1:
+                continue
+            result = result - np_prod([LA_S(o) for o in theta_vec]) * sp_Rational(1, sp_factorial(len(theta_vec)))
+
+        return result.simplify()
     
-    # Generate permutations for each valid combination
-    permutations_set = set()
-    for combination in results:
-        permutations_set.update(permutations(combination))
-    
-    # Return as sorted list for consistency
-    return sorted(permutations_set)
+    return memoized(LA_S)

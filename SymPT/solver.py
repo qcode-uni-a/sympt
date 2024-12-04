@@ -176,7 +176,7 @@ class EffectiveFrame:
         Rotates a given expression according to the computed transformation S.
     """
 
-    def __init__(self, H, V=None, subspaces=None):
+    def __init__(self, H, V=None, subspaces=None, symbol_values=None):
         """
         Initializes the EffectiveFrame object.
 
@@ -195,6 +195,9 @@ class EffectiveFrame:
 
         self.H_input = H.subs(sint_cost_dict)
         self.V_input = V.subs(sint_cost_dict) if V is not None else V
+
+        self.symbol_values = symbol_values
+        self.__do_substitute = symbol_values is not None
 
         del v
         del sint_cost_dict
@@ -312,6 +315,8 @@ class EffectiveFrame:
                     f'The zeroth order of the perturbative interaction is not zero, but it is instead: {self.__Vs.get(0)}')
 
         else:
+            if method == 'LA':
+                self.__Hs_aux = Hs_aux
             # Iterate over the perturbative expressions for the Hamiltonian
             for h_order, h_expr in Hs_aux.items():
                 # If the order is zero
@@ -361,6 +366,15 @@ class EffectiveFrame:
             
             self.__frequency_order = int(self.__frequency_order)
             self.__is_frequency_perturbative = self.__frequency_order > 0
+
+        if self.__do_substitute:
+            print('Substituting the symbol values in the Hamiltonian and perturbative interactions.')
+            self.__Hs = {k: v.subs(self.symbol_values) for k, v in self.__Hs.items()}
+            self.__Vs = {k: v.subs(self.symbol_values) for k, v in self.__Vs.items()}
+            if method == 'LA':
+                self.__Hs_aux = {k: v.subs(self.symbol_values) for k, v in self.__Hs_aux.items()}
+            
+            H0_expr = self.__Hs.get(0)
 
         # Compute the factorials for the perturbative orders
         factorials = [sp_Rational(1, sp_factorial(k))
@@ -438,7 +452,21 @@ class EffectiveFrame:
         self.__Hs_final[order] = (self.__Hs_final.get(order, Expression()) + new_hf).simplify()
 
     def __LA_solver(self, max_order, mask):
-        return
+
+        def subs_zs(theta_vec):
+            if len(theta_vec) == 1:
+                return self.__Z[theta_vec[0]]
+            if len(theta_vec) == 2:
+                return self.__Z[theta_vec[0]] * self.__Z[theta_vec[1]]
+            return subs_zs(theta_vec[:-1]) * self.__Z[theta_vec[-1]]
+        
+        self.__S = {}
+        LA_S = LA_S_generator(function=memoized(subs_zs), mask=mask)
+        for order in trange(1, max_order + 1, desc='Computing least-action generators S'):
+            Sk = LA_S(order)
+            self.__S[order] = apply_commutation_relations(Sk.doit(), self.commutation_relations).simplify()
+        
+        self.__Hs_final = {k: apply_substituitions(v, self.__ns).simplify() for k, v in self.__rotate(max_order, self.__Hs_aux).items()}
 
     def solve(self, max_order=2, method='SW', mask=None):
         """
@@ -464,9 +492,19 @@ class EffectiveFrame:
 
         Os_dicts = [self.__Hs, self.__Vs, self.__dtSs]
         nest_commute = create_nest_commute(Os_dicts, self.__S)
+
+
+        solver_prints = {
+            'SW': 'Time Dependent SWT' if self.__do_time_dependent else 'SWT',
+            'FD': 'Time Dependent Full Diagonalization' if self.__do_time_dependent else 'Full Diagonalization',
+            'BOD': 'Time Dependent Block Diagonalization' if self.__do_time_dependent else 'Block Diagonalization',
+        }
+
+        solver_prints['LA'] = solver_prints['FD']
+        solver_prints['BD'] = solver_prints['LA']
         
         # Iterate over the perturbative orders
-        for order in trange(1, max_order + 1, desc='Solving for each order'):
+        for order in trange(1, max_order + 1, desc=f'Performing {solver_prints[method]} for each order'):
             # Compute the partitions for the perturbative order
             set_of_keys = partitions_orders[order - 1]
             # Initialize the operator B_k for the perturbative order
@@ -537,6 +575,7 @@ class EffectiveFrame:
             del(self.__S)
             self.__LA_solver(max_order, mask)
 
+
         # Store the results
         self.__max_order = max_order
         self.__has_mask = mask is not None
@@ -590,11 +629,11 @@ class EffectiveFrame:
         if return_form == 'operator':
             if self.subspaces is not None:
                 O_final_projected = np_sum([self.__composite_basis.project(mul_group.fn) * Mul(
-                    *mul_group.inf).simplify() for mul_group in tqdm(O_final.expr, desc='Projecting to operator form')])
+                    *mul_group.inf).simplify() for mul_group in O_final.expr])
 
                 return O_final_projected
             O_final_projected = np_sum([mul_group.fn[0] * Mul(
-                *mul_group.inf).simplify() for mul_group in tqdm(O_final.expr, desc='Projecting to operator form')])
+                *mul_group.inf).simplify() for mul_group in O_final.expr])
             return O_final_projected
 
         elif return_form == 'matrix':
@@ -665,7 +704,7 @@ class EffectiveFrame:
                 self.corrections = self.__H_operator_form_corrections
                 return self.__H_operator_form
 
-            self.__H_operator_form_corrections = {k: self.__prepare_result(v, return_form) for k, v in self.__Hs_final.items()}
+            self.__H_operator_form_corrections = {k: self.__prepare_result(v, return_form) for k, v in tqdm(self.__Hs_final.items(), desc='Converting to operator form')}
             self.__H_operator_form = np_sum(list(self.__H_operator_form_corrections.values()))
             self.H = self.__H_operator_form
             self.corrections = self.__H_operator_form_corrections
@@ -695,6 +734,28 @@ class EffectiveFrame:
             raise ValueError('Invalid return form. Please choose either: ' + ', '.join(
                 ['operator', 'matrix', 'dict', 'dict_operator', 'dict_matrix']))
         return self.H
+    
+    def __rotate(self, max_order, Os):
+        factorials = [sp_Rational(1, sp_factorial(k)) for k in range(0, max_order + 1)]
+        nest_commute = create_nest_commute([Os, self.__dtSs], self.__S)
+
+        result = {}
+        result[0] = Os.get(0, Expression()) + Expression()
+
+        for order in trange(1, max_order + 1, desc='Rotating for each order'):
+            set_of_keys = partitions(order)
+            # Iterate over the all the partitions. Do not eliminate any partition.
+            for key in set_of_keys:
+                if len(key) == 1:
+                    result[order] = apply_commutation_relations(result.get(order, Expression()) + Os.get(key[0], Expression()), self.commutation_relations).simplify()
+                    continue
+
+                nestedness = len(key) - 1
+                result[order] = apply_commutation_relations(result.get(order, Expression()) + nest_commute(key, 0) * factorials[nestedness], self.commutation_relations).simplify()
+                if self.__do_time_dependent:
+                    result[order] = apply_commutation_relations(result.get(order, Expression()) - I * hbar * nest_commute(key, 1) * factorials[nestedness + 1], self.commutation_relations).simplify()
+        
+        return result
 
     def rotate(self, expr, max_order=None, return_form=None):
         """
@@ -725,25 +786,8 @@ class EffectiveFrame:
         Os = get_perturbative_expression(
             expr, self.__structure, self.subspaces)
 
-        nest_commute = create_nest_commute([Os, self.__dtSs], self.__S)
-
-        factorials = [sp_Rational(1, sp_factorial(k))
-                      for k in range(0, max_order + 1)]
-        result = Os.get(0, Expression()) + Expression()
-
-        for order in trange(1, max_order + 1, desc='Rotating for each order'):
-            set_of_keys = partitions(order)
-            # Iterate over the all the partitions. Do not eliminate any partition.
-            for key in set_of_keys:
-                if len(key) == 1:
-                    result += Os.get(key[0], Expression())
-                    continue
-
-                nestedness = len(key) - 1
-                result += nest_commute(key, 0) * factorials[nestedness]
-                if self.__do_time_dependent:
-                    result -= I * hbar * nest_commute(key, 1) * factorials[nestedness + 1]
-                result = result.simplify()
+        result_dict = self.__rotate(max_order, Os)
+        result = np_sum(list(result_dict.values()))
 
         result = (apply_commutation_relations(
             result, self.commutation_relations)).simplify()
@@ -760,7 +804,7 @@ class EffectiveFrame:
 
         subspaces_headers = [['Name', 'Type', 'Dimension']]
 
-        subspaces_finite = [[subspace.name, 'Fermionic' if subspace.is_fermionic else 'Finite' , f'{subspace.dim}x{subspace.dim}']
+        subspaces_finite = [[subspace.name, 'Finite' , f'{subspace.dim}x{subspace.dim}']
                             for subspace in self.subspaces if subspace.name != 'finite_pysw_built_in_function'] if self.subspaces is not None else []
         
         if self.__return_form == 'matrix' and self.subspaces is None:
