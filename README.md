@@ -102,15 +102,22 @@ print(H_eff)
 #### Example 2: Arbitrary Coupling Elimination (ACE)
 
 ```python
-from sympt import RDSymbol, RDBasis, EffectiveFrame, Block
+from sympt import *
+from sympy import Rational
 
-# Define symbols and basis
+# Define symbols
+omega = RDSymbol('omega', order=0, real=True)
 g = RDSymbol('g', order=1, real=True)
-a = RDBasis(name='a', dim=2).basis[0]
+
+# Define basis and operators
+spin = RDBasis(name='sigma', dim=2).basis[0]
+s0, sx, sy, sz = spin.basis
+a = BosonOp('a')
+ad = Dagger(a)
 
 # Define Hamiltonian
-H = g * a
-mask = Block(fin=a)
+H = Rational(1,2) * omega * sz + g * sx * (a + ad)
+mask = Block(fin = sx, inf = a) # this mask is equivalent to "SW" up to second order
 
 # Solve ACE transformation
 eff_frame = EffectiveFrame(H)
