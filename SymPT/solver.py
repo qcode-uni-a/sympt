@@ -1,7 +1,7 @@
 
 """
 Title: Solver for PySW package
-Date: 17 October 2024
+Date: 12 December 2024
 Authors:
 - Giovanni Francesco Diotallevi
 - Irving Leander Reascos Valencia
@@ -179,7 +179,7 @@ class EffectiveFrame:
         Rotates a given expression according to the computed transformation S.
     """
 
-    def __init__(self, H, V=None, subspaces=None, symbol_values=None):
+    def __init__(self, H, V=None, subspaces=None, symbol_values=None, verbose=True):
         """
         Initializes the EffectiveFrame object.
 
@@ -209,6 +209,10 @@ class EffectiveFrame:
         self.__return_form = 'operator'
         self.__structure = count_bosonic_subspaces(self.H_input)
         self.commutation_relations = self.get_commutation_relations()
+
+        self.verbose = verbose
+        if not verbose:
+            logger.setLevel('ERROR')
 
         self.formatter()
 
@@ -464,7 +468,7 @@ class EffectiveFrame:
         
         self.__S = {}
         LA_S = LA_S_generator(function=memoized(subs_zs), mask=mask)
-        for order in trange(1, max_order + 1, desc='Computing least-action generators S'):
+        for order in trange(1, max_order + 1, desc='Computing least-action generators S', disable=not self.verbose):
             Sk = LA_S(order)
             self.__S[order] = apply_commutation_relations(Sk.doit(), self.commutation_relations).simplify()
         
@@ -506,7 +510,7 @@ class EffectiveFrame:
         solver_prints['BD'] = solver_prints['LA']
         
         # Iterate over the perturbative orders
-        for order in trange(1, max_order + 1, desc=f'Performing {solver_prints[method]} for each order'):
+        for order in trange(1, max_order + 1, desc=f'Performing {solver_prints[method]} for each order', disable=not self.verbose):
             # Compute the partitions for the perturbative order
             set_of_keys = partitions_orders[order - 1]
             # Initialize the operator B_k for the perturbative order
@@ -656,15 +660,15 @@ class EffectiveFrame:
 
             if extra == 'operator':
                 if self.subspaces is not None:
-                    for mul_group in tqdm(O_final.expr, desc='Converting to dictionary (operator) form'):
+                    for mul_group in tqdm(O_final.expr, desc='Converting to dictionary (operator) form', disable=disable):
                         O_dict_form[Mul(
                             *mul_group.inf)] = self.__composite_basis.project(mul_group.fn)
                 else:
-                    for mul_group in tqdm(O_final.expr, desc='Converting to dictionary (operator) form'):
+                    for mul_group in tqdm(O_final.expr, desc='Converting to dictionary (operator) form', disable=disable):
                         O_dict_form[Mul(*mul_group.inf)] = mul_group.fn[0]
                     
             elif extra == 'matrix':
-                for mul_group in tqdm(O_final.expr, desc='Converting to dictionary (matrix) form'):
+                for mul_group in tqdm(O_final.expr, desc='Converting to dictionary (matrix) form', disable=disable):
                     O_dict_form[Mul(*mul_group.inf)] = mul_group.fn.expand()
             
             else:
@@ -706,7 +710,7 @@ class EffectiveFrame:
                 self.corrections = self.__H_operator_form_corrections
                 return self.__H_operator_form
 
-            self.__H_operator_form_corrections = {k: self.__prepare_result(v, return_form) for k, v in tqdm(self.__Hs_final.items(), desc='Converting to operator form')}
+            self.__H_operator_form_corrections = {k: self.__prepare_result(v, return_form) for k, v in tqdm(self.__Hs_final.items(), desc='Converting to operator form', disable= not self.verbose)}
             self.__H_operator_form = np_sum(list(self.__H_operator_form_corrections.values()))
             self.H = self.__H_operator_form
             self.corrections = self.__H_operator_form_corrections
@@ -716,7 +720,7 @@ class EffectiveFrame:
                 self.corrections = self.__H_matrix_form_corrections
                 return self.__H_matrix_form
             
-            self.__H_matrix_form_corrections = {k: self.__prepare_result(v, return_form) for k, v in tqdm(self.__Hs_final.items(), desc='Converting to matrix form')}
+            self.__H_matrix_form_corrections = {k: self.__prepare_result(v, return_form) for k, v in tqdm(self.__Hs_final.items(), desc='Converting to matrix form', disable= not self.verbose)}
             self.__H_matrix_form = sp_Add(*list(self.__H_matrix_form_corrections.values()))
             self.H = self.__H_matrix_form
             self.corrections = self.__H_matrix_form_corrections
@@ -744,7 +748,7 @@ class EffectiveFrame:
         result = {}
         result[0] = Os.get(0, Expression()) + Expression()
 
-        for order in trange(1, max_order + 1, desc='Rotating for each order'):
+        for order in trange(1, max_order + 1, desc='Rotating for each order', disable=not self.verbose):
             set_of_keys = partitions(order)
             # Iterate over the all the partitions. Do not eliminate any partition.
             for key in set_of_keys:
