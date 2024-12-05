@@ -53,7 +53,7 @@ To install SymPT, clone the repository and install dependencies:
 ```bash
 git clone https://github.com/your-repo/SymPT.git
 cd SymPT
-pip install -r requirements.txt
+pip install .
 ```
 
 SymPT depends on Python 3.8+ and the following libraries:
