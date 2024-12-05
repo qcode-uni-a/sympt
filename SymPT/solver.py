@@ -61,6 +61,9 @@ from sympy import (Rational as sp_Rational, factorial as sp_factorial,
 # import deep copy
 from copy import copy
 
+from .logging_config import setup_logger
+
+logger = setup_logger(__name__)
 
 def Denominator(H0_expr, uu, vv, Delta):
     """
@@ -209,8 +212,8 @@ class EffectiveFrame:
 
         self.formatter()
 
-        print('The EffectiveFrame object has been initialized successfully.')
-        print(self.__str__())
+        logger.info('The EffectiveFrame object has been initialized successfully.')
+        logger.info(self.__str__())
 
     def get_commutation_relations(self):
         if hasattr(self, 'commutation_relations'):
@@ -232,7 +235,7 @@ class EffectiveFrame:
                 'Subspaces must be provided when the Hamiltonian contains RDOperator objects.')
 
         if isinstance(self.H_input, Matrix):
-            print('Creating the EffectiveFrame object with matrix form.')
+            logger.info('Creating the EffectiveFrame object with matrix form.')
             if self.V_input is not None and not isinstance(self.V_input, Matrix):
                 raise ValueError('The type of V and H must be the same.')
 
@@ -270,12 +273,12 @@ class EffectiveFrame:
         if method == 'FD' and mask is not None:
             mask = None
             # If the mask is used in the full diagonalization mode, it will be ignored
-            print(
+            logger.info(
                 'The mask is not used in the full diagonalization mode and it will be ignored')
 
         # Check if the perturbative interaction will be added to the full Hamiltonian
         if self.V_input is not None and method != 'SW':
-            print('The perturbative interaction will be added to the full Hamiltonian')
+            logger.info('The perturbative interaction will be added to the full Hamiltonian')
             # Add the perturbative interaction to the Hamiltonian
             self.__H_old = (self.H_input + self.V_input).expand()
             # Set the perturbative interaction to zero
@@ -368,7 +371,7 @@ class EffectiveFrame:
             self.__is_frequency_perturbative = self.__frequency_order > 0
 
         if self.__do_substitute:
-            print('Substituting the symbol values in the Hamiltonian and perturbative interactions.')
+            logger.info('Substituting the symbol values in the Hamiltonian and perturbative interactions.')
             self.__Hs = {k: v.subs(self.symbol_values) for k, v in self.__Hs.items()}
             self.__Vs = {k: v.subs(self.symbol_values) for k, v in self.__Vs.items()}
             if method == 'LA':
@@ -589,9 +592,9 @@ class EffectiveFrame:
         if hasattr(self, 'H'):
             del (self.H)
 
-        print('The Hamiltonian has been solved successfully. Please use the get_H method to get the result in the desired form.')
+        logger.info('The Hamiltonian has been solved successfully. Please use the get_H method to get the result in the desired form.')
 
-    def __prepare_result(self, O_final, return_form='operator'):
+    def __prepare_result(self, O_final, return_form='operator', disable=True):
         """
         Prepares the result for the effective Hamiltonian or an operator after solving or rotating.
 
@@ -617,7 +620,7 @@ class EffectiveFrame:
 
         if 'operator' in return_form:
             if self.subspaces is None and O_final.expr[0].fn.shape[0] > 1:
-                print('Subspaces were not provided. Creating a finite subspace with the same dimension as the Hamiltonian.')
+                logger.info('Subspaces were not provided. Creating a finite subspace with the same dimension as the Hamiltonian.')
                 finite_subspace = RDBasis('f', self.H_input.shape[0])
                 self.subspaces = [finite_subspace]
                 self.__composite_basis = RDCompositeBasis(self.subspaces)
@@ -629,18 +632,18 @@ class EffectiveFrame:
         if return_form == 'operator':
             if self.subspaces is not None:
                 O_final_projected = np_sum([self.__composite_basis.project(mul_group.fn) * Mul(
-                    *mul_group.inf).simplify() for mul_group in O_final.expr])
+                    *mul_group.inf).simplify() for mul_group in tqdm(O_final.expr, desc='Converting to operator form', disable=disable)])
 
                 return O_final_projected
             O_final_projected = np_sum([mul_group.fn[0] * Mul(
-                *mul_group.inf).simplify() for mul_group in O_final.expr])
+                *mul_group.inf).simplify() for mul_group in tqdm(O_final.expr, desc='Converting to operator form', disable=disable)])
             return O_final_projected
 
         elif return_form == 'matrix':
             O_matrix_form = sp_zeros(
                 O_final.expr[0].fn.shape[0], O_final.expr[0].fn.shape[1])
 
-            for mul_group in tqdm(O_final.expr, desc='Converting to matrix form'):
+            for mul_group in tqdm(O_final.expr, desc='Converting to matrix form', disable=disable):
                 O_matrix_form += mul_group.fn * Mul(*mul_group.inf).simplify()
 
             if self.subspaces is None and O_final.expr[0].fn.shape[0] == 1:
@@ -714,7 +717,7 @@ class EffectiveFrame:
                 self.corrections = self.__H_matrix_form_corrections
                 return self.__H_matrix_form
             
-            self.__H_matrix_form_corrections = {k: self.__prepare_result(v, return_form) for k, v in self.__Hs_final.items()}
+            self.__H_matrix_form_corrections = {k: self.__prepare_result(v, return_form) for k, v in tqdm(self.__Hs_final.items(), desc='Converting to matrix form')}
             self.__H_matrix_form = sp_Add(*list(self.__H_matrix_form_corrections.values()))
             self.H = self.__H_matrix_form
             self.corrections = self.__H_matrix_form_corrections
@@ -797,7 +800,7 @@ class EffectiveFrame:
                 '_')[1] if '_' in return_form else self.__return_form
             return_form = 'dict' + f'_{extra}'
 
-        return self.__prepare_result(result, return_form)
+        return self.__prepare_result(result, return_form, disable=False)
 
     def __str__(self):
         information = '\nEffective Frame\n\n'
