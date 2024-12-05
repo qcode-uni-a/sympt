@@ -213,7 +213,6 @@ class EffectiveFrame:
         self.formatter()
 
         logger.info('The EffectiveFrame object has been initialized successfully.')
-        logger.info(self.__str__())
 
     def get_commutation_relations(self):
         if hasattr(self, 'commutation_relations'):
@@ -831,3 +830,47 @@ class EffectiveFrame:
         information += '\n\n'
 
         return information
+    
+    def _repr_latex_(self):
+        latex_str = r'\text{Effective Frame}\\'
+
+        # Header for subspaces
+        subspaces_headers = [r'\mathrm{Name}', r'\mathrm{Type}', r'\mathrm{Dimension}']
+
+        # Finite subspaces
+        subspaces_finite = [[sp_latex(RDSymbol(subspace.name)), r'\text{Finite}', f'{subspace.dim}\\times{subspace.dim}']
+                            for subspace in self.subspaces if subspace.name != 'finite_pysw_built_in_function'] if self.subspaces is not None else []
+
+        if self.__return_form == 'matrix' and self.subspaces is None:
+            subspaces_finite = [['Finite', 'Finite', f'{self.H_input.shape[0]}x{self.H_input.shape[0]}']]
+
+        # Infinite subspaces
+        subspaces_infinite = [[sp_latex(RDSymbol(str(subspace.as_ordered_factors(
+        )[1].name))), r'\text{Bosonic}', r'\infty'] for subspace in self.__structure.keys()]
+
+        # Combine all subspaces
+        subspaces_table = subspaces_finite + subspaces_infinite
+
+        # Create LaTeX table
+        latex_table = r'\begin{array}{ccc}\hline ' + ' & '.join(subspaces_headers) + r' \\ \hline '
+        for row in subspaces_table:
+            latex_table += ' & '.join(row) + r' \\ '
+        latex_table += r'\hline \end{array} \\'
+
+        latex_str +=  latex_table
+
+        # Effective Hamiltonian information
+        latex_str += r'\text{Effective Hamiltonian: }'
+        if not hasattr(self, '_EffectiveFrame__H_final'):
+            latex_str += r'\text{Not computed yet.}\\ \text{To do so, run \texttt{solve} method.}'
+        else:
+            latex_str += f'\\text{{Computed to {self.__max_order} order using }}'
+            if self.__full_diagonalization:
+                latex_str += r'\text{full diagonalization routine.}'
+            elif self.__has_mask:
+                latex_str += r'\text{mask routine.}'
+            else:
+                latex_str += r'\text{regular Schrieffer-Wolff transformation.}'
+
+        return  '$' + latex_str + '$'
+
