@@ -708,6 +708,7 @@ class EffectiveFrame:
         if return_form == 'operator':
             if hasattr(self, '_EffectiveFrame__H_operator_form'):
                 self.corrections = self.__H_operator_form_corrections
+                self.H = self.__H_operator_form
                 return self.__H_operator_form
 
             self.__H_operator_form_corrections = {k: self.__prepare_result(v, return_form) for k, v in tqdm(self.__Hs_final.items(), desc='Converting to operator form', disable= not self.verbose)}
@@ -718,6 +719,7 @@ class EffectiveFrame:
         elif return_form == 'matrix':
             if hasattr(self, '_EffectiveFrame__H_matrix_form'):
                 self.corrections = self.__H_matrix_form_corrections
+                self.H = self.__H_matrix_form
                 return self.__H_matrix_form
             
             self.__H_matrix_form_corrections = {k: self.__prepare_result(v, return_form) for k, v in tqdm(self.__Hs_final.items(), desc='Converting to matrix form', disable= not self.verbose)}
@@ -730,15 +732,32 @@ class EffectiveFrame:
             extra = return_form.split(
                 '_')[1] if '_' in return_form else self.__return_form
             if hasattr(self, '_EffectiveFrame__H_dict_form') and self.__H_dict_form.get(extra) is not None:
+                self.corrections = self.__H_dict_form_corrections[extra]
+                self.H = self.__H_dict_form[extra]
                 return self.__H_dict_form[extra]
-            H_final = np_sum(list(self.__Hs_final.values()))
-            self.__H_dict_form = {}
-            self.__H_dict_form[extra] = self.__prepare_result(
-                H_final, 'dict'+f'_{extra}')
+            
+            if not hasattr(self, '_EffectiveFrame__H_dict_form'):
+                self.__H_dict_form = {}
+                self.__H_dict_form_corrections  = {}
+
+            self.__H_dict_form_corrections[extra] = {k: self.__prepare_result(v, 'dict' + f'_{extra}') for k, v in tqdm(self.__Hs_final.items(), desc=f'Converting to dictionary of {extra} form', disable= not self.verbose)}
+
+            self.__H_dict_form[extra] = {}
+            
+            for _, v in self.__H_dict_form_corrections[extra].items():
+                for k, v1 in v.items():
+                    if self.__H_dict_form.get(k):
+                        self.__H_dict_form[extra][k] += v1
+                    else:
+                        self.__H_dict_form[extra][k] = v1
+            
             self.H = self.__H_dict_form[extra]
+            self.corrections = self.__H_dict_form_corrections[extra]
+            
         else:
             raise ValueError('Invalid return form. Please choose either: ' + ', '.join(
                 ['operator', 'matrix', 'dict', 'dict_operator', 'dict_matrix']))
+        
         return self.H
     
     def __rotate(self, max_order, Os):
@@ -877,4 +896,3 @@ class EffectiveFrame:
                 latex_str += r'\text{regular Schrieffer-Wolff transformation.}'
 
         return  '$' + latex_str + '$'
-

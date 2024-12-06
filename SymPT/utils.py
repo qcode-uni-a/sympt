@@ -622,7 +622,6 @@ def extract_ns(expr: Expression, structure: dict):
 
     return apply_substituitions(expr, ns_comm), ns_comm
 
-
 '''
 ---------------------------------------------------------------------------------------------------------------------------------------
                                                 FULL DIAGONALIZATION
