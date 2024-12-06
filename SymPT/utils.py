@@ -54,7 +54,7 @@ from numpy import (any as np_any, all as np_all, array as np_array,
                    ndarray as np_ndarray, logical_not as np_logical_not,
                    ones as np_ones, vectorize as np_vectorize,
                    zeros as np_zeros, nonzero as np_nonzero,
-                   prod as np_prod)
+                   prod as np_prod, block as np_block)
 from sympy import (Expr, Mul, Add, Pow, Symbol, Matrix, exp, latex, diag as sp_diag,
                    cos, sin, factor_terms as sp_factor_terms, conjugate, 
                    factorial as sp_factorial, Rational as sp_Rational, binomial as sp_binomial,
@@ -676,7 +676,49 @@ def separate_diagonal_off_diagonal(expr: Expression):
 ---------------------------------------------------------------------------------------------------------------------------------------
 '''
 
+def get_structure(block_sizes):
+    """
+    Generate a block structure with specified block sizes.
+    
+    Parameters:
+    -----------
+    block_sizes : list of int
+        List of block sizes for each section of the matrix
+        
+    Returns:
+    --------
+    structure : numpy.ndarray
+        The generated block structure matrix
+    """
+    # functions for generating blocks
+    block = lambda i, j: np_ones((i, j))
+    zero = lambda i, j: np_zeros((i, j))
+    
+    
+    n = len(block_sizes) # initial block structure
+    structure = []
+    
+    for i in range(n):
+        row = []
+        for j in range(n):
+            # Fill with zeros if i > j (lower triangle)
+            if i > j:
+                row.append(zero(block_sizes[i], block_sizes[j]))
+            # Create block of ones for diagonal
+            elif i == j:
+                row.append(zero(block_sizes[i], block_sizes[j]))
+            # Fill with ones for upper triangle
+            else:
+                row.append(block(block_sizes[i], block_sizes[j]))
+        structure.append(row)
+    
 
+    structure = np_block(structure) # Convert to numpy block matrix
+    
+    structure = structure + structure.T # Make symmetric 
+    
+    return structure
+  
 class memoized(object):
     """
     A decorator class for memoization of function results to improve performance by caching outputs.
