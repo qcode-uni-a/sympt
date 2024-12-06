@@ -18,6 +18,7 @@ setup(
         "sympy",
         "tabulate",
         "tqdm",
+        "colorama",
     ],  # Specify dependencies
     classifiers=[                 # Metadata for the package
         "Programming Language :: Python :: 3",
