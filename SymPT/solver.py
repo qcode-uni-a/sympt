@@ -257,8 +257,8 @@ class EffectiveFrame:
     def __checks_and_prepare_solver(self, method, mask, max_order=2):
 
         method = method.upper()
-        if method not in ['SW', 'FD', 'BD', 'LA', 'BOD']:
-            raise ValueError('Invalid method. Please choose one of the following: SW, FD, BD, LA, BOD.')
+        if method not in ['SW', 'FD', 'BD', 'LA', 'ACE']:
+            raise ValueError('Invalid method. Please choose one of the following: SW, FD, BD, LA, ACE.')
         
         if method == 'BD':
             method = 'LA'
@@ -419,7 +419,7 @@ class EffectiveFrame:
             else:
                 self.__Hs_final[order] = (self.__Hs_final.get(order, Expression()) - I * hbar * nest_commute(key, 2) * factorial_n_1).simplify()
 
-    def __FD_BOD_Bk_Hk(self, **kwargs):
+    def __FD_ACE_Bk_Hk(self, **kwargs):
 
         order = kwargs['order']
         key = kwargs['key']
@@ -488,7 +488,7 @@ class EffectiveFrame:
                 - FD  : Full diagonalization.
                 - BD  : Block diagonalization. Default "least action" (LA) method.
                 - LA  : Block diagonalization with least action method. (default). Time-dependent perturbations are not supported.
-                - BOD : Block off-diagonal S method. For time-dependent perturbations use this method.
+                - ACE : Arbitrary coupling elimination method. For time-dependent perturbations use this method.
         mask : Expression, optional
             A mask expression used for selectively applying transformations (default is None).
         """
@@ -503,7 +503,7 @@ class EffectiveFrame:
         solver_prints = {
             'SW': 'Time Dependent SWT' if self.__do_time_dependent else 'SWT',
             'FD': 'Time Dependent Full Diagonalization' if self.__do_time_dependent else 'Full Diagonalization',
-            'BOD': 'Time Dependent Block Diagonalization' if self.__do_time_dependent else 'Block Diagonalization',
+            'ACE': 'Time Dependent Arbitrary coupling elimination' if self.__do_time_dependent else 'Block Diagonalization',
         }
 
         solver_prints['LA'] = solver_prints['FD']
@@ -552,7 +552,7 @@ class EffectiveFrame:
                 else:
                     solver_input['method'] = method if method != 'LA' else 'FD' # If least action method is used, first apply the full diagonalization routine
                     solver_input['mask'] = mask
-                    self.__FD_BOD_Bk_Hk(**solver_input)
+                    self.__FD_ACE_Bk_Hk(**solver_input)
                 
             if self.__B_k.expr.shape[0] != 0:
                 # Apply the commutation relations to the operator B_k
