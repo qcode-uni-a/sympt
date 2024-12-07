@@ -1270,6 +1270,7 @@ class RDBasis:
             The dimension of the basis.
         """
         self.name = name
+        self.__projector_form = projector_form
         names = None
 
         if dim is None:
@@ -1288,8 +1289,7 @@ class RDBasis:
         if len(self.basis) == 1:
             self.basis_ling_alg_norm = dim
         else:
-            self.basis_ling_alg_norm = nsimplify(
-                (self.basis[1].matrix.T.conjugate() @ self.basis[1].matrix).trace())
+            self.basis_ling_alg_norm = np_vectorize(lambda O: nsimplify((O.matrix.T.conjugate() @ O.matrix).trace()))(self.basis)
         
         self.__elements_projected = np_array([[self._project(projector_matrices[i * self.dim + j]) for j in range(self.dim)] for i in range(self.dim)], dtype=object)
         
@@ -1375,10 +1375,9 @@ class RDBasis:
         ) @ to_be_projected for matrix in self.basis_matrices], axis1=1, axis2=2))
         # Normalize the coefficients using the `basis_ling_alg_norm`.
         basis_coeffs /= self.basis_ling_alg_norm
-        # Update the first coefficient based on the normalization factor.
-        basis_coeffs[0] *= self.basis_ling_alg_norm / self.dim
+
         # If the first coefficient equals 1 and all other coefficients are zero, return 1.
-        if basis_coeffs[0] == 1 and all(basis_coeffs[1:] == 0):
+        if not self.__projector_form and basis_coeffs[0] == 1 and all(basis_coeffs[1:] == 0):
             return 1
         return basis_coeffs.dot(self.basis)
 
@@ -1483,8 +1482,7 @@ class RDCompositeBasis:
             self.basis_ling_alg_norm = self.dim
         else:
             # Compute the normalization factor based on the trace of the matrix representation of the basis elements.
-            self.basis_ling_alg_norm = nsimplify(
-                (self.basis_matrices[1].T.conjugate() @ self.basis_matrices[1]).trace())
+            self.basis_ling_alg_norm =  np_array([nsimplify((matrix.T.conjugate() @ matrix).trace()) for matrix in self.basis_matrices])
             
         self.__elements_projected = []
         for i in range(self.dim):
@@ -1524,12 +1522,6 @@ class RDCompositeBasis:
 
         # Normalize the coefficients using the `basis_ling_alg_norm`.
         basis_coeffs /= self.basis_ling_alg_norm
-        # Update the first coefficient based on the normalization factor.
-        basis_coeffs[0] *= self.basis_ling_alg_norm / self.dim
-
-        # If the first coefficient equals 1 and all other coefficients are zero,
-        if basis_coeffs[0] == 1 and all(basis_coeffs[1:] == 0):
-            return 1
 
         return basis_coeffs.dot(self.basis).expand()
     
