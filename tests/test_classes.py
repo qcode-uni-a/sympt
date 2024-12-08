@@ -58,4 +58,23 @@ def test_RDCompositeBasis():
     Composite = RDCompositeBasis([Spin, Projectors])
 
     expr = kronecker_product(Spin.basis[0].matrix, Projectors.basis[0].matrix)
-    assert (Composite.project(expr) - Composite.basis[0]).cancel() == 0
+    assert (Composite.project(expr) - Projectors.basis[0]).cancel() == 0
+
+def test_MulGroup():
+    omega = RDSymbol('omega', real=True, order=0)
+    a = BosonOp('a')
+    ad = Dagger(a)
+
+    omega_z = RDSymbol('omega_z', real=True, order=1)
+    b = BosonOp('b')
+    bd = Dagger(b)
+
+    x = MulGroup(fn=omega   * Matrix([[1, 0], [0, 1]]) , inf= np_array([ad*a, 1]), delta = np_array([0, 0]), Ns=np_array([ad*a, bd*b]))
+    y = MulGroup(fn=omega_z * Matrix([[1, 0], [0, -1]]), inf= np_array([1, bd*b]), delta = np_array([0, 0]), Ns=np_array([ad*a, bd*b]))
+
+    multiplication = x * y
+    assert (multiplication.fn -  omega * omega_z * Matrix([[1, 0], [0, -1]])) == sp_zeros(2)
+    assert np_all(multiplication.inf == [ad*a, bd*b])
+    assert np_all(multiplication.delta == [0, 0])
+    assert np_all(multiplication.Ns == [ad*a, bd*b])
+    
