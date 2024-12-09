@@ -905,7 +905,8 @@ def extract_frequencies(term):
     if len(exponentials_atoms) > 1:
         raise ValueError("The term contains more than one exponential. If you see this error, please report it to the developers.")
     
-    return exponentials_atoms.pop().args[0]
+    exp_arg = exponentials_atoms.pop().args[0]
+    return exp_arg.coeff(t)
 
 '''
 ---------------------------------------------------------------------------------------------------------------------------------------
