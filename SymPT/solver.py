@@ -462,8 +462,6 @@ class EffectiveFrame:
         def subs_zs(theta_vec):
             if len(theta_vec) == 1:
                 return self.__Z[theta_vec[0]]
-            if len(theta_vec) == 2:
-                return self.__Z[theta_vec[0]] * self.__Z[theta_vec[1]]
             return subs_zs(theta_vec[:-1]) * self.__Z[theta_vec[-1]]
         
         self.__S = {}
