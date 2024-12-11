@@ -1545,7 +1545,7 @@ class RDCompositeBasis:
             If the matrix to be projected has incorrect dimensions.
         """
         coeffs =  np_array(to_be_projected, dtype=object)
-        return np_sum(coeffs * self.__elements_projected).cancel().expand()
+        return np_sum(coeffs * self.__elements_projected).expand()
 
 
 class RDSymbol(Symbol):
