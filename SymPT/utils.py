@@ -65,7 +65,7 @@ from sympy.physics.quantum import Dagger, Operator
 from sympy.physics.quantum.boson import BosonOp
 
 # Local application/library imports
-from .classes import MulGroup, RDSymbol, RDOperator, Expression, get_matrix, BExpression, BGroup
+from .classes import MulGroup, RDSymbol, RDOperator, Expression, get_matrix, BExpression, BGroup, t
 
 '''
 ---------------------------------------------------------------------------------------------------------------------------------------
