@@ -58,6 +58,7 @@ from tabulate import tabulate
 from sympy import (Rational as sp_Rational, factorial as sp_factorial,
                    nsimplify as sp_nsimplify, simplify as sp_simplify,
                    Add as sp_Add, Matrix as sp_Matrix)
+from numpy import any as np_any
 # import deep copy
 from copy import copy
 
@@ -315,10 +316,21 @@ class EffectiveFrame:
             # Compute the perturbative expression for the perturbative interaction
             self.__Vs = get_perturbative_expression(
                 self.__V_old, self.__structure, self.subspaces)
+            tmp_H0_expr = self.__Hs.get(0) #Expression of zeroth order hamiltonian
+            if not tmp_H0_expr: # check if Hamiltonian has zeroth order term
+                raise ValueError("The provided Hamiltonian contains no diagonal zeroth order term.")
+            for mulgroup in tmp_H0_expr.expr:
+                if not mulgroup.is_diagonal(): # if mulgroup is not diagonal
+                    raise ValueError("The provided Hamiltonian contains zeroth order terms outside the diagonal. Rotate your system to avoid this behaviour (note that by definition H0 must be solvable)")
             if self.__Vs.get(0) is not None:
                 # Check if the zeroth order of the perturbative interaction is zero
                 raise ValueError(
                     f'The zeroth order of the perturbative interaction is not zero, but it is instead: {self.__Vs.get(0)}')
+            for key in list(self.__Vs.keys()): # iterating through orders of Vs
+                tmp_Vs = self.__Vs[key]
+                for mulgroup in tmp_Vs.expr:
+                    if mulgroup.is_diagonal():
+                        raise ValueError("V cannot contain diagonal elements.")
 
         else:
             if method == 'LA':
@@ -360,7 +372,23 @@ class EffectiveFrame:
         if self.__do_time_dependent:
             if method == 'LA':
                 raise NotImplementedError('Time-dependent perturbations are not supported in the least action method yet.')
-            
+
+            #### checking if time periodicity is periodic ####
+            for tmp_H_order in self.__Hs.values():
+                if tmp_H_order.is_time_dependent:
+                    mulgroups = tmp_H_order.expr
+                    for mulgroup in mulgroups:
+                        if mulgroup.is_time_dependent:
+                            if not mulgroup.is_t_periodic():
+                                raise ValueError("Non periodic time dependencies are not yet supported")
+            for tmp_V_order in self.__Vs.values():
+                if tmp_V_order.is_time_dependent:
+                    mulgroups = tmp_V_order.expr
+                    for mulgroup in mulgroups:
+                        if mulgroup.is_time_dependent:
+                            if not mulgroup.is_t_periodic():
+                                raise ValueError("Non periodic time dependencies are not yet supported")
+            ###################################################
             freqs_orders = [get_order(exponential.args[0])[0] for exponential in (self.__H_old + self.__V_old).atoms(exp) if exponential.has(t)]
 
             if len(set(freqs_orders)) > 1:

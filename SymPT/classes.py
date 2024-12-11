@@ -46,7 +46,8 @@ from sympy import (
     MutableDenseMatrix, eye, I, sqrt,
     Rational, nsimplify, zeros as sp_zeros,
     latex as sp_latex, simplify as sp_simplify,
-    diff as sp_diff, Function as sp_Function
+    diff as sp_diff, Function as sp_Function, diag as sp_diag,
+    cos as sp_cos, sin as sp_sin, exp as sp_exp
 )
 
 from sympy.matrices.dense import matrix_multiply_elementwise as sp_elementwise
@@ -1145,6 +1146,45 @@ class MulGroup(Expr):
             A new `MulGroup` object with the substitutions applied.
         """
         return MulGroup(self.fn.subs(substitutions), self.inf, self.delta, self.Ns)
+        
+    def is_diagonal(self):
+        if np_any(self.delta):
+            return False
+        m, n = self.fn.shape
+        diag_part_of_fn = sp_diag(*self.fn.diagonal()) # diagonal part of fn
+        if cancel(diag_part_of_fn - self.fn) == sp_zeros(m, n): # if fn contains nothing else but diagonal
+            return True
+        else:
+            False
+    def is_t_periodic(self):
+        """
+        Checks if the MulGroup contains the symbol "t" inside
+        a sp.cos(), sp.sin(), or sp.exp(i*) function.
+    
+        Returns:
+            bool: True if such an occurrence exists, False otherwise.
+        """
+        if not self.is_time_dependent: # if not time dependent
+            return True # then time constant
+        
+        for element in self.fn: # Iterate over all elements in the matrix
+            if not element.has(t): # if t was not found in this element
+                continue # go to next element
+            # Extract all function calls from the expression
+            funcs = element.atoms(sp_Function)
+            for func in funcs:
+                if isinstance(func, (sp_cos, sp_sin)): # if the function is one of sp.cos, sp.sin
+                    args_factors_of_terms = [term.as_ordered_factors() for term in func.args[0].as_ordered_terms() if term.has(t)]
+                    if len(args_factors_of_terms) != 0: #  if "t" is present as an argument
+                        return True
+                if isinstance(func, sp_exp):
+                    args_factors_of_terms = [term.as_ordered_factors() for term in func.args[0].as_ordered_terms() if term.has(t)]
+                    for term_decomposed_in_factors in args_factors_of_terms:
+                        if I not in term_decomposed_in_factors:
+                            return False
+                    return True
+    
+        return False
 
     def _sympystr(self, printer):
         return f'{self.fn} * {Mul(*self.inf)}'
