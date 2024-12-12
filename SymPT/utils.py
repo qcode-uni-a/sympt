@@ -898,10 +898,13 @@ def get_perturbative_expression(expr, structure, subspaces=None):
     return result
 
 def extract_frequencies(term):
+    if not term.has(t):
+        return 0
     term = sp_factor_terms(term)
     exponentials_atoms = term.atoms(exp)
     if len(exponentials_atoms) == 0:
         return 0
+    exponentials_atoms = [exp_atom for exp_atom in exponentials_atoms if exp_atom.has(t)]
     if len(exponentials_atoms) > 1:
         raise ValueError("The term contains more than one exponential. If you see this error, please report it to the developers.")
     
