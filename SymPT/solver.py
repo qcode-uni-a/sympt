@@ -146,7 +146,7 @@ def get_S(H0_expr, equation_to_solve, correct_denominator=False):
             else:
                 corrected_S = 0
                 for term in S_mat[uu, vv].expand().as_ordered_terms():
-                    freq_term = (extract_frequencies(term) * (-I / t * hbar)).cancel()  # We assume that the argument for the exponential is in the form of exp(i/hbar Energy t)
+                    freq_term = (extract_frequencies(term) * (-I  * hbar)).cancel()  # We assume that the argument for the exponential is in the form of exp(i/hbar Energy t)
                     corrected_S += term / (denom + freq_term)
                 S_mat[uu, vv] = corrected_S
 
