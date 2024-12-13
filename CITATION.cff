@@ -1,0 +1,12 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+  - family-names: Benito, Diotallevi, Reascos
+    given-names: Monica, Giovanni Francesco, Leander
+    orcid: xxxxxxxxx
+title: "sympt"
+version: 1.0
+identifiers:
+  - type: doi
+    value: xxxxxxxx
+date-released: xxxxxxxx
