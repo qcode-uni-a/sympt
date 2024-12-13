@@ -1,24 +1,47 @@
 [project]
-name = "sympt"
-version = "1.0"
-description = "A Python package with classes, utils, and solver functionality"
-readme = { file = "README.md", content-type = "text/markdown" }
 authors = [
+    { name = "Monica Benito", email = "monica.benito@uni-a.de" },
     { name = "Giovanni Francesco Diotallevi", email = "francesco.diotallevi@uni-a.de" },
     { name = "Irving Leander Reascos Valencia", email = "irving.reascos.valencia@uni-a.de" }
 ]
-requires-python = ">=3.6"
-license = { text = "MIT" }
-
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Intended Audience :: Science/Research",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.8",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering",
+]
 dependencies = [
-    "ipython",
-    "multimethod",
-    "numpy",
-    "sympy",
-    "tabulate",
-    "tqdm",
+    "ipython>=8.20",
+    "multimethod>=1.12",
+    "numpy>=2.0",
+    "sympy>=1.10",
+    "tabulate>=0.9",
+    "tqdm>=4.66",
     "colorama"
 ]
+description = "A solver for perturbative expansions in quantum systems"
+dynamic = ["version"]
+license = { file = "LICENSE" }
+name = "sympt"
+readme = { file = "README.md", content-type = "text/markdown" }
+requires-python = ">=3.8"
 
 [project.urls]
-Source = "https://github.com/qcode-uni-a/sympt"
+Repository = "https://github.com/qcode-uni-a/sympt"
+
+[build-system]
+build-backend = "setuptools.build_meta"
+requires = [
+  "setuptools>=66"
+]
+
+[tool.setuptools.dynamic]
+version = {attr = "sympt.__version__"} 
