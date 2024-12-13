@@ -1,7 +1,7 @@
 
 """
-Title: Solver for PySW package
-Date: 12 December 2024
+Title: Solver for sympt package
+Date: 13 December 2024
 Authors:
 - Giovanni Francesco Diotallevi
 - Irving Leander Reascos Valencia
