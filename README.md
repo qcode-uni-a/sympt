@@ -51,7 +51,7 @@ SymPT is a symbolic perturbative transformation tool built to help researchers a
 To install SymPT, clone the repository and install dependencies:
 
 ```bash
-git clone https://github.com/your-repo/SymPT.git
+git clone https://github.com/qcode-uni-a/sympt.git
 cd SymPT
 pip install .
 ```
