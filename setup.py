@@ -2,8 +2,8 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="SymPT",            # Package name
-    version="0.9.9",              # Package version
+    name="sympt",            # Package name
+    version="1.0",              # Package version
     description="A Python package with classes, utils, and solver functionality",  # Short description
     long_description=open("README.md").read(),  # Detailed description from README
     long_description_content_type="text/markdown",  # Specify markdown if README.md is used
