@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sympt"
+version = "1.0"
+description = "A Python package with classes, utils, and solver functionality"
+readme = { file = "README.md", content-type = "text/markdown" }
+authors = [
+    { name = "Giovanni Francesco Diotallevi", email = "francesco.diotallevi@uni-a.de" },
+    { name = "Irving Leander Reascos Valencia", email = "irving.reascos.valencia@uni-a.de" }
+]
+homepage = "https://github.com/qcode-uni-a/SymPT"
+requires-python = ">=3.6"
+license = { text = "MIT" }
+
+dependencies = [
+    "ipython",
+    "multimethod",
+    "numpy",
+    "sympy",
+    "tabulate",
+    "tqdm",
+    "colorama"
+]
+
+[project.urls]
+Source = "https://github.com/qcode-uni-a/SymPT"
+
+[project.classifiers]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent"
+]
