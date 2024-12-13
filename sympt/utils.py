@@ -1,7 +1,7 @@
 
 """
-Title: Utils for PySW package
-Date: 17 October 2024
+Title: Utils for sympt package
+Date: 13 December 2024
 Authors:
 - Giovanni Francesco Diotallevi
 - Irving Leander Reascos Valencia
