@@ -1,6 +1,6 @@
 """
-Title: Classes for SymPT package
-Date: 17 October 2024
+Title: Classes for sympt package
+Date: 13 December 2024
 Authors:
 - Giovanni Francesco Diotallevi
 - Irving Leander Reascos Valencia
