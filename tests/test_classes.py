@@ -1,5 +1,4 @@
-import pytest
-from SymPT import *
+from sympt import *
 
 
 def test_RDSymbol():

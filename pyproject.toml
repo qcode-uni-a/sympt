@@ -44,4 +44,10 @@ requires = [
 ]
 
 [tool.setuptools.dynamic]
-version = {attr = "sympt.__version__"} 
+version = {attr = "sympt.__version__"}
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+testpaths = [
+    "tests"
+]
