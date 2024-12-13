@@ -25,12 +25,12 @@ dependencies = [
     "colorama"
 ]
 
-[project.urls]
-Source = "https://github.com/qcode-uni-a/SymPT"
-
-[project.classifiers]
+# Correct classifiers section as a list of strings
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent"
 ]
+
+[project.urls]
+Source = "https://github.com/qcode-uni-a/sympt"
