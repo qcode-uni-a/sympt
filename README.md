@@ -83,7 +83,7 @@ SymPT depends on Python 3.8+ and the following libraries:
 ---
 
 ### Examples
-
+Here we include two example cases of how to use SymPT. Find more within the Examples folder of this project.
 #### Example 1: Schrieffer-Wolff Transformation (SWT)
 
 ```python
