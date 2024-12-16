@@ -1,7 +1,7 @@
 
 """
 Title: Utils for sympt package
-Date: 13 December 2024
+Date: 16 December 2024
 Authors:
 - Giovanni Francesco Diotallevi
 - Irving Leander Reascos Valencia
@@ -675,7 +675,7 @@ def separate_diagonal_off_diagonal(expr: Expression):
 ---------------------------------------------------------------------------------------------------------------------------------------
 '''
 
-def get_structure(block_sizes):
+def get_block_mask(block_sizes):
     """
     Generate a block structure with specified block sizes.
     
