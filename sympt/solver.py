@@ -1,7 +1,7 @@
 
 """
 Title: Solver for sympt package
-Date: 13 December 2024
+Date: 16 December 2024
 Authors:
 - Giovanni Francesco Diotallevi
 - Irving Leander Reascos Valencia
@@ -300,7 +300,9 @@ class EffectiveFrame:
             
             # Add the structure of the bosonic subspaces to the mask
             mask.add_structure(self.__structure)
-
+        elif (method == 'ACE' or method == 'LA') and mask is None:
+            raise ValueError(f'The mask must be provided for the {method} method.')
+          
         # Compute the perturbative expression for the Hamiltonian
         Hs_aux = get_perturbative_expression(
             self.__H_old, self.__structure, self.subspaces)
