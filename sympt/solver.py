@@ -1,7 +1,8 @@
 
 """
+Branch: Optimizations
 Title: Solver for sympt package
-Date: 16 December 2024
+Date: 18 December 2024
 Authors:
 - Giovanni Francesco Diotallevi
 - Irving Leander Reascos Valencia
