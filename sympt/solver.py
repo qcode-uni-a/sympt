@@ -1,6 +1,6 @@
 
 """
-Branch: Optimizations
+Branch: Optimizations branch
 Title: Solver for sympt package
 Date: 18 December 2024
 Authors:
