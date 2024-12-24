@@ -38,7 +38,7 @@ SymPT is a symbolic perturbative transformation tool built to help researchers a
 
 ## Key Features
 
-- **Multiple Transformation Methods**: Includes routines for SWT, FD, ACE, and multi-block diagonalizations.
+- **Multiple Transformation Methods**: Includes routines for SWT, FD, ACE.
 - **Symbolic Computation**: Powered by `sympy`, enabling exact symbolic results for quantum systems.
 - **Customizable Input**: Define Hamiltonians and operators with ease using symbolic expressions.
 - **Flexible Output**: Obtain results in operator, matrix, or dictionary forms.
@@ -176,10 +176,6 @@ Fully diagonalizes the Hamiltonian, eliminating all off-diagonal elements.
 ### Arbitrary Coupling Elimination (ACE)
 
 Targets specific off-diagonal couplings for elimination, allowing flexible transformations.
-
-### Least-Action Multi-Block Transformations
-
-Performs multi-block diagonalizations using a "least-action" condition for generator selection.
 
 ---
 
