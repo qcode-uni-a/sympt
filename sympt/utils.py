@@ -66,7 +66,7 @@ from sympy.physics.quantum.boson import BosonOp
 from sympy.simplify import nsimplify as sp_nsimplify, simplify as sp_simplify
 
 # Local application/library imports
-from .classes import MulGroup, RDSymbol, RDOperator, Expression, get_matrix, BExpression, BGroup, t
+from .classes import MulGroup, RDSymbol, RDOperator, Expression, get_matrix, t
 
 '''
 ---------------------------------------------------------------------------------------------------------------------------------------
