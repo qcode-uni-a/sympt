@@ -2,12 +2,13 @@
 """
 Branch: Optimizations branch
 Title: Solver for sympt package
-Date: 18 December 2024
+Date: 24 December 2024
 Authors:
 - Giovanni Francesco Diotallevi
 - Irving Leander Reascos Valencia
 
-DOI: doi.doi.doi
+DOI: https://doi.org/10.48550/arXiv.2412.10240
+
 
 Description:
 ------------
@@ -40,10 +41,9 @@ To Do:
 ------
 [ ] Denominator function can be memoized for better performance.
 [ ] Implement parallelization for the computation of the energy denominator.
-[ ] Denominator can be changed to handle time-dependent perturbations.
 
-[ ] S function can be optimized by using the Hermitian property of the EquationtoSolve and the anti-Hermitian property of S.
-[ ] Implement parallelization for the computation of the anti-Hermitian Operator S.
+[ ] Eta (W) functions can be optimized by using the Hermitian property of Ps and the anti-Hermitian (Hermitian) property of Eta (W).
+[ ] Implement parallelization for the computation of the anti-Hermitian Operator Eta (W).
 
 [ ] Prepare the result method can be optimized for better performance by parallelizing the conversion to matrix form.
 """
@@ -67,7 +67,56 @@ from .logging_config import setup_logger
 
 logger = setup_logger(__name__)
 
-def Denominator(H0_expr, uu, vv, Delta):
+
+
+
+def get_Eta(W_delta, P_, correct_denominator=False):
+
+    if not np_any(P_.expr):
+        return Expression()
+    
+    Eta = Expression()
+
+    for mul_group in P_.expr:
+        Delta = mul_group.delta
+        P_mat = MutableDenseMatrix(mul_group.fn)
+        P_mat_non_zeros = np_nonzero(P_mat)
+
+        D = W_delta(tuple(Delta))
+        
+        if not correct_denominator:
+            if not np_any(D[P_mat_non_zeros]):
+                raise ValueError('The energy denominator is zero for the given matrix elements.')
+
+            D[D == 0] = 1
+            Eta = Eta + MulGroup(sp_elementwise(sp_Matrix(1/D), P_mat), mul_group.inf, mul_group.delta, mul_group.Ns)
+            continue
+
+        Eta_mat = sp_zeros(*P_mat.shape)
+
+        for i, j in zip(*P_mat_non_zeros):
+            if i == j and not np_any(Delta):
+                raise ValueError('It is not possible to eliminate diagonal elements.')
+            corrected_eta = 0
+            for term in P_mat[i, j].expand().as_ordered_terms():
+                
+                if not term.has(t):
+                    corrected_eta += term / D[i, j]
+                    continue
+
+                freq_term = (extract_frequencies(term) * (-I  * hbar)).cancel()  # We assume that the argument for the exponential is in the form of exp(i/hbar Energy t)
+                denominator = D[i, j] + freq_term
+                if denominator == 0:
+                    raise ValueError(f'It is impossible to decouple the state with index {int(i)} (Delta {Delta}) from state with index {int(j)} (Delta {Delta}) because they are degenerate (see H0)')
+                corrected_eta += term / denominator
+            Eta_mat[i, j] = corrected_eta
+        
+        Eta = Eta + MulGroup(Eta_mat, mul_group.inf, mul_group.delta, mul_group.Ns)
+            
+    return Eta
+
+
+def w_uv_delta(H0_expr, uu, vv, Delta):
     """
     Computes the energy denominator for off-diagonal elements of the Hamiltonian during the Schrieffer-Wolff transformation.
 
@@ -108,52 +157,133 @@ def Denominator(H0_expr, uu, vv, Delta):
         
     return E.expand().simplify()
 
+def get_w_delta(H0_expr):
+    fin_shape = H0_expr.expr[0].fn.shape
 
-def get_S(H0_expr, equation_to_solve, correct_denominator=False):
-    """
-    Solves for the anti-Hermitian operator S in the Schrieffer-Wolff transformation.
+    def w_delta(delta):
+        delta = np_array(delta)
+        res = np_zeros(fin_shape, dtype=object)
+        for uu in range(fin_shape[0]):
+            for vv in range(fin_shape[1]):
+                if np_all(delta == 0) and uu == vv:
+                    continue
+                res[uu, vv] = w_uv_delta(H0_expr, uu, vv, delta)
+        return res
 
-    Parameters
-    ----------
-    H0_expr : Expression
-        The zeroth-order Hamiltonian.
-    equation_to_solve : Expression
-        The expression for the off-diagonal terms in the perturbative expansion.
-
-    Returns
-    -------
-    Expression
-        The anti-Hermitian Operator S used in the Schrieffer-Wolff transformation.
-    """
-    if not np_any(equation_to_solve.expr):
-        return Expression()
-    S = Expression()
-    for mul_group in equation_to_solve.expr:
-        Delta = mul_group.delta
-        S_mat = MutableDenseMatrix(mul_group.fn)
-        S_mat_non_zeros = np_nonzero(S_mat)
-
-        for uu, vv in zip(*S_mat_non_zeros):
-            # This can be optimized by using the fact that the EquationtoSolve is Hermitian and S is anti-Hermitian
-            # This is a good candidate for parallelization
-            denom = Denominator(H0_expr, uu, vv, Delta)
-
-            if denom == 0 and not correct_denominator:
-                if uu == vv and Delta == 0:
-                    raise ValueError(f'S contains diagonal elements. If you saw this message, please contact the developers.')
-                raise ValueError(f'It is impossible to decouple the state with index {int(uu)} (Delta {Delta}) from state with index {int(vv)} (Delta {Delta}) because they are degenerate (see H0)')
-            elif not correct_denominator:
-                S_mat[uu, vv] /= denom
-            else:
-                corrected_S = 0
-                for term in S_mat[uu, vv].expand().as_ordered_terms():
-                    freq_term = (extract_frequencies(term) * (-I  * hbar)).cancel()  # We assume that the argument for the exponential is in the form of exp(i/hbar Energy t)
-                    corrected_S += term / (denom + freq_term)
-                S_mat[uu, vv] = corrected_S
+    return memoized(w_delta)
 
 
-        S += MulGroup(S_mat, mul_group.inf, mul_group.delta, mul_group.Ns)
-    return S
+def get_P_generator(Hs_memory, Vs_memory, Ws_memory, Etas_memory, Ps_memory):
+    # Hs contains only the B(H) terms
+    # Vs contains only the B_(H) terms 
+
+    @memoized
+    def W(i, j):
+        if i not in Hs_memory and i not in Vs_memory:
+            return Expression(), Expression()
+        W_to_remove, W_to_keep = Ws_memory[j]
+
+        Wij_to_keep   = commutator(Vs_memory.get(i, Expression()), W_to_remove) + commutator(Hs_memory.get(i, Expression()), W_to_keep)
+
+        Wij_to_remove = commutator(Vs_memory.get(i, Expression()), W_to_keep) + commutator(Hs_memory.get(i, Expression()), W_to_remove)
+
+
+        return Wij_to_remove, Wij_to_keep
+    @memoized
+    def E(i, j):
+        if i == 0:
+            return Ps_memory[j][0], Expression()
+        if i not in Hs_memory and i not in Vs_memory:
+            return Expression(), Expression()
+        
+        Eij_to_keep   = commutator(Vs_memory.get(i, Expression()), Etas_memory[j])
+        Eij_to_remove = commutator(Hs_memory.get(i, Expression()), Etas_memory[j])
+
+        return Eij_to_remove, Eij_to_keep
+    
+
+    @memoized
+    def WE_we(i, j, k):
+        W_to_remove, W_to_keep = W(j, i)
+        E_to_remove, E_to_keep = E(j, i)
+
+        Wk_to_remove, Wk_to_keep = Ws_memory[k]
+
+        # Ww = (Wk + WR) (wk + wR)
+        term_to_keep   = W_to_keep * Wk_to_keep   + W_to_remove * Wk_to_remove
+        term_to_remove = W_to_keep * Wk_to_remove + W_to_remove * Wk_to_keep
+        # -W eta = - (Wk + WR) eta
+        term_to_keep = term_to_keep     - W_to_remove * Etas_memory[k]
+        term_to_remove = term_to_remove - W_to_keep   * Etas_memory[k]
+        # Ew = (Ek + ER) (wk + wR)
+        term_to_keep = term_to_keep + E_to_keep * Wk_to_keep + E_to_remove * Wk_to_remove
+        term_to_remove = term_to_remove + E_to_keep * Wk_to_remove + E_to_remove * Wk_to_keep
+        # -E eta = - (Ek + ER) eta
+        term_to_keep = term_to_keep     - E_to_remove * Etas_memory[k]
+        term_to_remove = term_to_remove - E_to_keep   * Etas_memory[k]
+
+
+        term_to_keep = term_to_keep + term_to_keep.dagger()
+        term_to_remove = term_to_remove + term_to_remove.dagger()
+
+        #term = (W(j, i) + E(j, i))  * (Ws_memory[k] - Etas_memory[k])
+        #term = term + term.dagger()
+        return term_to_remove, term_to_keep
+        
+        
+    def P_uu_vv_delta(order):
+
+        P_to_keep   = Hs_memory.get(order, Expression())
+        P_to_remove = Vs_memory.get(order, Expression())
+
+        for i, j in T(order, 2):
+            Eij_to_remove, Eij_to_keep = E(i, j)
+
+            P_to_remove = P_to_remove - Eij_to_remove
+            P_to_keep = P_to_keep - Eij_to_keep
+    
+        for i, j, k in T(order, 3):
+            WE_we_ikl_to_remove, WE_we_ikl_to_keep = WE_we(i, j, k)
+            P_to_remove = P_to_remove - sp_Rational(1, 2) * WE_we_ikl_to_remove
+            P_to_keep =   P_to_keep   - sp_Rational(1, 2) * WE_we_ikl_to_keep
+
+        for i, j in T(order, 2):
+            WE_we_i_j_to_remove, WE_we_i_j_to_keep = WE_we(i, 0, j)
+            P_to_remove = P_to_remove - sp_Rational(1, 2) * WE_we_i_j_to_remove
+            P_to_keep =   P_to_keep   - sp_Rational(1, 2) * WE_we_i_j_to_keep
+        
+        return P_to_remove, P_to_keep
+    
+    return memoized(P_uu_vv_delta)
+
+
+def get_W_generator(Ws_memory, Eta_memory):
+
+    def get_W(order):
+        W_to_remove, W_to_keep = Expression(), Expression()
+        for i, j in T(order, 2):
+            Wi_to_remove, Wi_to_keep = Ws_memory.get(i, (Expression(), Expression()))
+            Wj_to_remove, Wj_to_keep = Ws_memory.get(j, (Expression(), Expression()))
+            Ei = Eta_memory.get(i, Expression())
+            Ej = Eta_memory.get(j, Expression())
+
+            # (Wi_k + Wi_R) * (Wj_k + Wj_R)
+            W_to_keep   = W_to_keep   + Wi_to_keep * Wj_to_keep + Wi_to_remove * Wj_to_remove
+            W_to_remove = W_to_remove + Wi_to_keep * Wj_to_remove + Wi_to_remove * Wj_to_keep
+            # -(Wi_k + Wi_R) * Ej
+            W_to_keep   = W_to_keep   - Wi_to_remove * Ej
+            W_to_remove = W_to_remove - Wi_to_keep   * Ej
+            # Ei * (Wj_k + Wj_R)
+            W_to_keep   = W_to_keep   + Ei * Wj_to_remove
+            W_to_remove = W_to_remove + Ei * Wj_to_keep
+            # - Ei * Ej
+            W_to_keep   = W_to_keep   - Ei * Ej
+            
+
+        return  W_to_remove * (- sp_Rational(1,2)) , W_to_keep * (- sp_Rational(1,2))
+    
+    return memoized(get_W)
+
 
 
 class EffectiveFrame:
@@ -259,27 +389,31 @@ class EffectiveFrame:
     def __checks_and_prepare_solver(self, method, mask, max_order=2):
 
         method = method.upper()
-        if method not in ['SW', 'FD', 'BD', 'LA', 'ACE']:
-            raise ValueError('Invalid method. Please choose one of the following: SW, FD, BD, LA, ACE.')
+        if method not in ['SW', 'FD', 'ACE']:
+            raise ValueError('Invalid method. Please choose one of the following: SW, FD, ACE.')
         
-        if method == 'BD':
-            method = 'LA'
 
         self.__H_old = copy(self.H_input)
         self.__V_old = copy(self.V_input)
 
         # Check if the perturbative interaction is provided
-        if method == 'SW' and self.V_input is None:
-            # Raise an error if the perturbative interaction is not provided
-            raise ValueError(
-                'The perturbative interaction must be provided for the regular Schrieffer-Wolff transformation')
+        if method == 'SW':
+            if self.V_input is None:
+                # Raise an error if the perturbative interaction is not provided
+                raise ValueError(
+                    'The perturbative interaction must be provided for the regular Schrieffer-Wolff transformation')
+            b_p = lambda ps : ps
 
         # Check if the mask is used in the full diagonalization mode
-        if method == 'FD' and mask is not None:
-            mask = None
-            # If the mask is used in the full diagonalization mode, it will be ignored
-            logger.info(
-                'The mask is not used in the full diagonalization mode and it will be ignored')
+        if method == 'FD':
+            if mask is not None:
+                mask = None
+                # If the mask is used in the full diagonalization mode, it will be ignored
+                logger.info(
+                    'The mask is not used in the full diagonalization mode and it will be ignored')
+            
+            b_p = lambda x: separate_diagonal_off_diagonal(x[0] + x[1])
+
 
         # Check if the perturbative interaction will be added to the full Hamiltonian
         if self.V_input is not None and method != 'SW':
@@ -301,11 +435,14 @@ class EffectiveFrame:
             
             # Add the structure of the bosonic subspaces to the mask
             mask.add_structure(self.__structure)
-        elif (method == 'ACE' or method == 'LA') and mask is None:
+
+            b_p = lambda x: mask.apply_mask(x[0] + x[1])
+
+        elif method == 'ACE' and mask is None:
             raise ValueError(f'The mask must be provided for the {method} method.')
           
         # Compute the perturbative expression for the Hamiltonian
-        Hs_aux = get_perturbative_expression(
+        Hs_total = get_perturbative_expression(
             self.__H_old, self.__structure, self.subspaces)
         
         # If the full diagonalization or mask routine is used
@@ -315,7 +452,7 @@ class EffectiveFrame:
         # If the regular Schrieffer-Wolff transformation is used
         if method == 'SW':
             # Set the Hamiltonians to the perturbative expressions
-            self.__Hs = Hs_aux
+            self.__Hs = Hs_total
             # Compute the perturbative expression for the perturbative interaction
             self.__Vs = get_perturbative_expression(
                 self.__V_old, self.__structure, self.subspaces)
@@ -336,10 +473,8 @@ class EffectiveFrame:
                         raise ValueError("V cannot contain diagonal elements.")
 
         else:
-            if method == 'LA':
-                self.__Hs_aux = Hs_aux
             # Iterate over the perturbative expressions for the Hamiltonian
-            for h_order, h_expr in Hs_aux.items():
+            for h_order, h_expr in Hs_total.items():
                 # If the order is zero
                 if h_order == 0:
                     # Separate the diagonal and off-diagonal terms of the Hamiltonian
@@ -353,14 +488,7 @@ class EffectiveFrame:
                     self.__Hs[h_order] = new_hk
                     continue
 
-                # If the mask is used
-                if method != 'FD' and method != 'LA' and mask is not None:
-                    # Apply the mask to the perturbative expression
-                    new_vk, new_hk = mask.apply_mask(h_expr)
-                # If the full diagonalization routine is used
-                else:
-                    # Separate the diagonal and off-diagonal terms of the Hamiltonian
-                    new_vk, new_hk = separate_diagonal_off_diagonal(h_expr)
+                new_vk, new_hk = b_p((h_expr, Expression()))
 
                 self.__Hs[h_order] = new_hk
                 self.__Vs[h_order] = new_vk
@@ -373,8 +501,6 @@ class EffectiveFrame:
         self.__do_time_dependent = np_any([v.is_time_dependent for k, v in self.__Hs.items() if k != 0]) or np_any([v.is_time_dependent for k, v in self.__Vs.items() if k != 0])
 
         if self.__do_time_dependent:
-            if method == 'LA':
-                raise NotImplementedError('Time-dependent perturbations are not supported in the least action method yet.')
 
             #### checking if time periodicity is periodic ####
             for tmp_H_order in self.__Hs.values():
@@ -384,6 +510,7 @@ class EffectiveFrame:
                         if mulgroup.is_time_dependent:
                             if not mulgroup.is_t_periodic():
                                 raise ValueError("Non periodic time dependencies are not yet supported")
+                            
             for tmp_V_order in self.__Vs.values():
                 if tmp_V_order.is_time_dependent:
                     mulgroups = tmp_V_order.expr
@@ -408,101 +535,29 @@ class EffectiveFrame:
             logger.info('Substituting the symbol values in the Hamiltonian and perturbative interactions.')
             self.__Hs = {k: v.subs(self.symbol_values) for k, v in self.__Hs.items()}
             self.__Vs = {k: v.subs(self.symbol_values) for k, v in self.__Vs.items()}
-            if method == 'LA':
-                self.__Hs_aux = {k: v.subs(self.symbol_values) for k, v in self.__Hs_aux.items()}
             
             H0_expr = self.__Hs.get(0)
-
-        # Compute the factorials for the perturbative orders
-        factorials = [sp_Rational(1, sp_factorial(k))
-                      for k in range(0, max_order + 3)]
         
         # Extract the number operators from  the zeroth-order Hamiltonian
         H0_expr, self.__ns = extract_ns(H0_expr, self.__structure)
         H0_expr = H0_expr.simplify()
 
         # Initialize the dictionary to store the anti-Hermitian operator S for each order
-        self.__S = {}
-        self.__dtSs = {}
-
+        self.__Up = {0: Expression()}
+        self.__Upc = {0: Expression()}
+        self.__Ws = {0: (Expression(), Expression()), 1: (Expression(), Expression())}
+        self.__dtWs = {0: (Expression(), Expression()), 1: (Expression(), Expression())}
+        self.__Etas = {0: Expression()}
+        self.__dtEtas = {0: Expression()}
+        self.__Ps = {0: (Expression(), Expression())}
+        self.__Qs = {0: Expression()}
         self.__Hs_final = {0 : H0_expr}
 
-        partitions_orders = np_vectorize(partitions, otypes=[np_ndarray])(range(1, max_order + 1))
+        def B_P(order):
+            return b_p(self.__Ps[order])
 
-        return H0_expr, mask, factorials, partitions_orders
+        return H0_expr, B_P
     
-    def __SW_Bk_Hk(self, **kwargs):
-
-        order = kwargs['order']
-        key = kwargs['key']
-        factorial_n, factorial_n_1 = kwargs['factorials']
-        is_nestedness_even = kwargs['is_nestedness_even']
-        nest_commute = kwargs['nest_commute']
-
-        # Compute the nested commutator for the regular Schrieffer-Wolff transformation
-        self.__B_k = (self.__B_k + nest_commute(key, is_nestedness_even) * factorial_n).simplify()
-        # Compute the nested commutator for the regular Schrieffer-Wolff transformation
-        self.__Hs_final[order] = (self.__Hs_final.get(order, Expression()) + nest_commute(key, not is_nestedness_even) * factorial_n).simplify()
-
-        if self.__do_time_dependent:
-            if is_nestedness_even:
-                self.__B_k = (self.__B_k - I * hbar * nest_commute(key, 2) * factorial_n_1).simplify()
-            else:
-                self.__Hs_final[order] = (self.__Hs_final.get(order, Expression()) - I * hbar * nest_commute(key, 2) * factorial_n_1).simplify()
-
-    def __FD_ACE_Bk_Hk(self, **kwargs):
-
-        order = kwargs['order']
-        key = kwargs['key']
-        factorial_n, factorial_n_1 = kwargs['factorials']
-        is_nestedness_even = kwargs['is_nestedness_even']
-        method = kwargs['method']
-        mask = kwargs['mask']
-        nest_commute = kwargs['nest_commute']
-
-        # Compute the nested commutator for the full diagonalization or mask routine
-        new_commutator_odd = nest_commute(
-            key, not is_nestedness_even) * factorial_n
-        # Compute the nested commutator for the full diagonalization or mask routine
-        new_commutator_even = nest_commute(
-            key, is_nestedness_even) * factorial_n
-
-        # Compute the nested commutator for the full diagonalization or mask routine
-        new_commutator = new_commutator_odd + new_commutator_even
-        if self.__do_time_dependent:
-            # Compute the nested commutator for the dS/dt term
-            new_commutator_dS = nest_commute(key, 2) * factorial_n_1
-            new_commutator -= I * hbar * new_commutator_dS
-
-        new_commutator = new_commutator.simplify()
-
-        if method == 'FD':
-            # Separate the diagonal and off-diagonal terms of the nested commutator
-            new_bk, new_hf = separate_diagonal_off_diagonal(new_commutator)
-        else:
-            # Apply the mask to the nested commutator
-            new_bk, new_hf = mask.apply_mask(new_commutator)
-        
-        # Add the nested commutator to the operator B_k
-        self.__B_k = (self.__B_k + new_bk).simplify()
-        # Add the nested commutator to the final Hamiltonian
-        self.__Hs_final[order] = (self.__Hs_final.get(order, Expression()) + new_hf).simplify()
-
-    def __LA_solver(self, max_order, mask):
-
-        def subs_zs(theta_vec):
-            if len(theta_vec) == 1:
-                return self.__Z[theta_vec[0]]
-            return subs_zs(theta_vec[:-1]) * self.__Z[theta_vec[-1]]
-        
-        self.__S = {}
-        LA_S = LA_S_generator(function=memoized(subs_zs), mask=mask)
-        for order in trange(1, max_order + 1, desc='Computing least-action generators S', disable=not self.verbose):
-            Sk = LA_S(order)
-            self.__S[order] = apply_commutation_relations(Sk.doit(), self.commutation_relations).simplify()
-        
-        self.__Hs_final = {k: apply_substituitions(v, self.__ns).simplify() for k, v in self.__rotate(max_order, self.__Hs_aux).items()}
-
     def solve(self, max_order=2, method='SW', mask=None):
         """
         Solves for the effective Hamiltonian up to the specified order using the Schrieffer-Wolff transformation.
@@ -515,101 +570,72 @@ class EffectiveFrame:
             Supported methods:
                 - SW  : Regular Schrieffer-Wolff transformation.
                 - FD  : Full diagonalization.
-                - BD  : Block diagonalization. Default "least action" (LA) method.
-                - LA  : Block diagonalization with least action method. (default). Time-dependent perturbations are not supported.
-                - ACE : Arbitrary coupling elimination method. For time-dependent perturbations use this method.
+                - ACE : Arbitrary coupling elimination least action.
         mask : Expression, optional
             A mask expression used for selectively applying transformations (default is None).
         """
 
         # Prepare the Hamiltonians and perturbative interactions
-        H0_expr, mask, factorials, partitions_orders = self.__checks_and_prepare_solver(method, mask, max_order)
+        H0_expr, B_P = self.__checks_and_prepare_solver(method, mask, max_order)
 
-        Os_dicts = [self.__Hs, self.__Vs, self.__dtSs]
-        nest_commute = create_nest_commute(Os_dicts, self.__S)
+        Ps = get_P_generator(self.__Hs, self.__Vs, self.__Ws, self.__Etas, self.__Ps)
+        W_delta = get_w_delta(H0_expr)
+        get_W = get_W_generator(self.__Ws, self.__Etas)
 
+        for order in trange(1, max_order + 1, desc='Computing the effective Hamiltonian', disable=not self.verbose):
+            self.__Ps[order] = Ps(order)
 
-        solver_prints = {
-            'SW': 'Time Dependent SWT' if self.__do_time_dependent else 'SWT',
-            'FD': 'Time Dependent Full Diagonalization' if self.__do_time_dependent else 'Full Diagonalization',
-            'ACE': 'Time Dependent Arbitrary coupling elimination' if self.__do_time_dependent else 'Block Diagonalization',
-        }
+            if self.__do_time_dependent:
+                Q_order_to_remove, Q_order_to_keep = Expression(), Expression()
 
-        solver_prints['LA'] = solver_prints['FD']
-        solver_prints['BD'] = solver_prints['LA']
-        
-        # Iterate over the perturbative orders
-        for order in trange(1, max_order + 1, desc=f'Performing {solver_prints[method]} for each order', disable=not self.verbose):
-            # Compute the partitions for the perturbative order
-            set_of_keys = partitions_orders[order - 1]
-            # Initialize the operator B_k for the perturbative order
-            self.__B_k = Expression()
+                #dtEta[order]
+                Q_order_to_remove = Q_order_to_remove + self.__dtEtas.get(order, Expression())
 
-            # Iterate over the partitions. Eliminate the last partition because it is the term [H0, S] and it is used to compute the operator S
-            for key in set_of_keys[:-1]:
-                if len(key) == 1:
-                    # Does not deppend of full_diagonalization neither on mask
-                    Vk = self.__Vs.get(key[0], Expression())
-                    # Add the perturbative interaction to the operator B_k (Equation to solve)
-                    self.__B_k += Vk
-                    # If do_time_dependent
-                    if self.__do_time_dependent:
-                        # dtSs[order + self.__frequency_order] = Ss.get(order, Expression()).diff(t)
-                        self.__B_k -= I * hbar * self.__dtSs.get(order, Expression())
+                for i, j in T(order, 2):
 
-                    # Add the perturbative Hamiltonian to the final Hamiltonian
-                    if method != 'LA':
-                        self.__Hs_final[key[0]] = self.__Hs_final.get(key[0], Expression()) + self.__Hs.get(key[0], Expression())
-                    continue
+                    dtWi_to_remove, dtWi_to_keep = self.__dtWs.get(i, (Expression(), Expression()))
+                    Wj_to_remove, Wj_to_keep = self.__Ws.get(j, (Expression(), Expression()))
 
-                # Compute the nestedness of the partition
-                nestedness = len(key) - 1
-                is_nestedness_even = nestedness % 2 == 0
-                # If the regular Schrieffer-Wolff transformation is used
+                    # (dtWi_k + dtWi_R) * (Wj_k + Wj_R)
+                    Q_order_to_keep   = Q_order_to_keep   + dtWi_to_keep * Wj_to_keep + dtWi_to_remove * Wj_to_remove
+                    Q_order_to_remove = Q_order_to_remove + dtWi_to_keep * Wj_to_remove + dtWi_to_remove * Wj_to_keep
 
-                solver_input = {
-                    'order': order,
-                    'key': key,
-                    'factorials': (factorials[nestedness], factorials[nestedness + 1]),
-                    'is_nestedness_even': is_nestedness_even,
-                    'nest_commute': nest_commute
-                }
+                    # -(dtWi_k + dtWi_R) * Ej
+                    Q_order_to_keep   = Q_order_to_keep   - dtWi_to_remove * self.__Etas[j]
+                    Q_order_to_remove = Q_order_to_remove - dtWi_to_keep   * self.__Etas[j]
 
-                if method == 'SW':
-                    self.__SW_Bk_Hk(**solver_input)
-                            
-                else:
-                    solver_input['method'] = method if method != 'LA' else 'FD' # If least action method is used, first apply the full diagonalization routine
-                    solver_input['mask'] = mask
-                    self.__FD_ACE_Bk_Hk(**solver_input)
+                    # dtEi * (Wj_k + Wj_R)
+                    Q_order_to_keep   = Q_order_to_keep   + self.__dtEtas.get(i, Expression()) * Wj_to_remove
+                    Q_order_to_remove = Q_order_to_remove + self.__dtEtas.get(i, Expression()) * Wj_to_keep
+
+                    # - dtEi * Ej
+                    Q_order_to_keep   = Q_order_to_keep   - self.__dtEtas.get(i, Expression()) * self.__Etas[j]
+
+                Q_order_to_keep   = (Q_order_to_keep   - Q_order_to_keep.dagger())   * I * hbar * sp_Rational(1,2)
+                Q_order_to_remove = (Q_order_to_remove - Q_order_to_remove.dagger()) * I * hbar * sp_Rational(1,2)
                 
-            if self.__B_k.expr.shape[0] != 0:
-                # Apply the commutation relations to the operator B_k
-                self.__B_k = (apply_commutation_relations(
-                    self.__B_k, self.commutation_relations)).simplify()
+                self.__Qs[order] = (Q_order_to_remove, Q_order_to_keep)
+                self.__Ps[order] = (self.__Ps[order][0] + Q_order_to_remove, self.__Ps[order][1] + Q_order_to_keep)
 
-            if order <= max_order:
-                # Compute the anti-Hermitian operator S for the perturbative order
-                S_k = (get_S(H0_expr, -self.__B_k, self.__do_time_dependent and not self.__is_frequency_perturbative)).simplify()
-                if self.__do_time_dependent and order + self.__frequency_order <= max_order:
-                    self.__dtSs[order + self.__frequency_order] = S_k.diff(t)
-                # Store the anti-Hermitian operator S for the perturbative order
-                self.__S[order] = S_k
+            self.__Ps[order] = [apply_commutation_relations(P_t, self.commutation_relations).simplify() for P_t in self.__Ps[order]]
 
-            if method != 'LA':
-                # Apply the commutation relations to the final Hamiltonian
-                self.__Hs_final[order] = (apply_commutation_relations(self.__Hs_final.get(order, Expression()), self.commutation_relations)).simplify()
-        
-        if method != 'LA':
-            self.__Hs_final ={
-                k: (apply_substituitions(apply_commutation_relations(v, self.commutation_relations).simplify(), self.__ns)).simplify() for k, v in self.__Hs_final.items()
+            P_to_remove, P_to_keep = B_P(order)
+            self.__Ps[order] = (P_to_remove, P_to_keep)
+            self.__Hs_final[order] = P_to_keep
+            self.__Etas[order] = get_Eta(W_delta, P_to_remove, correct_denominator = self.__do_time_dependent and not self.__is_frequency_perturbative)
+            self.__Ws[order] = [apply_commutation_relations(W_t, self.commutation_relations).simplify() for W_t in get_W(order)]
+            self.__Up[order] = np_sum(self.__Ws.get(order, (Expression(), Expression()))) + self.__Etas[order]
+            self.__Upc[order] = np_sum(self.__Ws.get(order, (Expression(), Expression()))) - self.__Etas[order]
+
+            perturbative_order = order + self.__frequency_order if self.__do_time_dependent else order
+
+            if self.__do_time_dependent and perturbative_order <= max_order:
+                self.__dtWs[perturbative_order]   = [W_t.diff(t) for W_t in self.__Ws[order]]
+                self.__dtEtas[perturbative_order] = self.__Etas[order].diff(t)
+
+        self.__Hs_final ={
+                k: (apply_substituitions(v, self.__ns)).simplify() for k, v in self.__Hs_final.items()
             }
-
-        if method == 'LA':
-            self.__Z = self.__S
-            del(self.__S)
-            self.__LA_solver(max_order, mask)
-
 
         # Store the results
         self.__max_order = max_order
@@ -663,7 +689,7 @@ class EffectiveFrame:
 
         if return_form == 'operator':
             if self.subspaces is not None:
-                O_final_projected = np_sum([self.__composite_basis.project(mul_group.fn) * Mul(
+                O_final_projected = np_sum([np_sum([v.cancel() * k for k,v in group_by_operators(self.__composite_basis.project(mul_group.fn)).items()]) * Mul(
                     *mul_group.inf).simplify() for mul_group in tqdm(O_final.expr, desc='Converting to operator form', disable=disable)])
 
                 return O_final_projected
@@ -691,7 +717,7 @@ class EffectiveFrame:
                 if self.subspaces is not None:
                     for mul_group in tqdm(O_final.expr, desc='Converting to dictionary (operator) form', disable=disable):
                         O_dict_form[Mul(
-                            *mul_group.inf)] = self.__composite_basis.project(mul_group.fn)
+                            *mul_group.inf)] = np_sum([v.cancel() * k for k,v in group_by_operators(self.__composite_basis.project(mul_group.fn)).items()])
                 else:
                     for mul_group in tqdm(O_final.expr, desc='Converting to dictionary (operator) form', disable=disable):
                         O_dict_form[Mul(*mul_group.inf)] = mul_group.fn[0]
@@ -789,28 +815,6 @@ class EffectiveFrame:
         
         return self.H
     
-    def __rotate(self, max_order, Os):
-        factorials = [sp_Rational(1, sp_factorial(k)) for k in range(0, max_order + 1)]
-        nest_commute = create_nest_commute([Os, self.__dtSs], self.__S)
-
-        result = {}
-        result[0] = Os.get(0, Expression()) + Expression()
-
-        for order in trange(1, max_order + 1, desc='Rotating for each order', disable=not self.verbose):
-            set_of_keys = partitions(order)
-            # Iterate over the all the partitions. Do not eliminate any partition.
-            for key in set_of_keys:
-                if len(key) == 1:
-                    result[order] = apply_commutation_relations(result.get(order, Expression()) + Os.get(key[0], Expression()), self.commutation_relations).simplify()
-                    continue
-
-                nestedness = len(key) - 1
-                result[order] = apply_commutation_relations(result.get(order, Expression()) + nest_commute(key, 0) * factorials[nestedness], self.commutation_relations).simplify()
-                if self.__do_time_dependent:
-                    result[order] = apply_commutation_relations(result.get(order, Expression()) - I * hbar * nest_commute(key, 1) * factorials[nestedness + 1], self.commutation_relations).simplify()
-        
-        return result
-
     def rotate(self, expr, max_order=None, return_form=None):
         """
         Rotates a given expression according to the computed transformation S.
@@ -839,12 +843,27 @@ class EffectiveFrame:
 
         Os = get_perturbative_expression(
             expr, self.__structure, self.subspaces)
+        
+        H_rotated = {0: Os.get(0, Expression())}
 
-        result_dict = self.__rotate(max_order, Os)
-        result = np_sum(list(result_dict.values()))
+        for order in trange(1, max_order + 1, desc='Rotating the expression', disable= not self.verbose):
+            H_rotated_order = [Os.get(order, Expression()), (self.__Up[order] * Os.get(0, Expression())), (Os.get(0, Expression()) * self.__Upc[order])]
 
-        result = (apply_commutation_relations(
-            result, self.commutation_relations)).simplify()
+            for i, j in list(T(order, 2)):   
+                H_rotated_order.append((self.__Up[i] * Os.get(0, Expression()) * self.__Upc[j]))
+                H_rotated_order.append((self.__Up[i] * Os.get(j, Expression())))
+                H_rotated_order.append((Os.get(i, Expression()) * self.__Upc[j]))
+            
+            for i,j,k in list(T(order, 3)):
+                H_rotated_order.append((self.__Up[i] * Os.get(j, Expression()) * self.__Upc[k]))
+
+            if self.__do_time_dependent:
+                H_rotated_order.append(I * hbar * np_sum(self.__Qs[order]))
+
+            H_rotated[order] = apply_substituitions(apply_commutation_relations(np_sum(H_rotated_order), self.commutation_relations), self.__ns).simplify()
+                
+
+        result = np_sum(list(H_rotated.values())).simplify()
         
         if 'dict' in return_form:
             extra = return_form.split(
@@ -852,76 +871,3 @@ class EffectiveFrame:
             return_form = 'dict' + f'_{extra}'
 
         return self.__prepare_result(result, return_form, disable=False)
-
-    def __str__(self):
-        information = '\nEffective Frame\n\n'
-
-        subspaces_headers = [['Name', 'Type', 'Dimension']]
-
-        subspaces_finite = [[subspace.name, 'Finite' , f'{subspace.dim}x{subspace.dim}']
-                            for subspace in self.subspaces if subspace.name != 'finite_pysw_built_in_function'] if self.subspaces is not None else []
-        
-        if self.__return_form == 'matrix' and self.subspaces is None:
-            subspaces_finite = [['Finite', 'Finite', f'{self.H_input.shape[0]}x{self.H_input.shape[0]}']]
-
-        subspaces_infinite = [[subspace.as_ordered_factors(
-        )[1].name, 'Bosonic', '∞'] for subspace in self.__structure.keys()]
-
-        subspaces_info = tabulate(subspaces_headers + subspaces_finite + subspaces_infinite,
-                                  headers='firstrow', tablefmt='rounded_grid', stralign='center')
-
-        information += subspaces_info
-
-        information += '\n\nEffective Hamiltonian: '
-        if not hasattr(self, '_EffectiveFrame__H_final'):
-            information += '\tNot computed yet. To do so, run `solve` method. '
-        else:
-            information += f'\tComputed to {self.__max_order} order using'
-            information += ' full diagonalization routine.' if self.__full_diagonalization else ' mask routine.' if self.__has_mask else ' regular Schrieffer-Wolff transformation.'
-
-        information += '\n\n'
-
-        return information
-    
-    def _repr_latex_(self):
-        latex_str = r'\text{Effective Frame}\\'
-
-        # Header for subspaces
-        subspaces_headers = [r'\mathrm{Name}', r'\mathrm{Type}', r'\mathrm{Dimension}']
-
-        # Finite subspaces
-        subspaces_finite = [[sp_latex(RDSymbol(subspace.name)), r'\text{Finite}', f'{subspace.dim}\\times{subspace.dim}']
-                            for subspace in self.subspaces if subspace.name != 'finite_pysw_built_in_function'] if self.subspaces is not None else []
-
-        if self.__return_form == 'matrix' and self.subspaces is None:
-            subspaces_finite = [['Finite', 'Finite', f'{self.H_input.shape[0]}x{self.H_input.shape[0]}']]
-
-        # Infinite subspaces
-        subspaces_infinite = [[sp_latex(RDSymbol(str(subspace.as_ordered_factors(
-        )[1].name))), r'\text{Bosonic}', r'\infty'] for subspace in self.__structure.keys()]
-
-        # Combine all subspaces
-        subspaces_table = subspaces_finite + subspaces_infinite
-
-        # Create LaTeX table
-        latex_table = r'\begin{array}{ccc}\hline ' + ' & '.join(subspaces_headers) + r' \\ \hline '
-        for row in subspaces_table:
-            latex_table += ' & '.join(row) + r' \\ '
-        latex_table += r'\hline \end{array} \\'
-
-        latex_str +=  latex_table
-
-        # Effective Hamiltonian information
-        latex_str += r'\text{Effective Hamiltonian: }'
-        if not hasattr(self, '_EffectiveFrame__H_final'):
-            latex_str += r'\text{Not computed yet.}\\ \text{To do so, run \texttt{solve} method.}'
-        else:
-            latex_str += f'\\text{{Computed to {self.__max_order} order using }}'
-            if self.__full_diagonalization:
-                latex_str += r'\text{full diagonalization routine.}'
-            elif self.__has_mask:
-                latex_str += r'\text{mask routine.}'
-            else:
-                latex_str += r'\text{regular Schrieffer-Wolff transformation.}'
-
-        return  '$' + latex_str + '$'

@@ -1,11 +1,11 @@
 """
 Title: Classes for sympt package
-Date: 13 December 2024
+Date: 24 December 2024
 Authors:
 - Giovanni Francesco Diotallevi
 - Irving Leander Reascos Valencia
 
-DOI: doi.doi.doi
+DOI: https://doi.org/10.48550/arXiv.2412.10240
 
 Description:
 
@@ -68,171 +68,6 @@ from numpy import (
 
 # Importing additional utility from itertools
 from itertools import product
-
-class BExpression:
-    def __init__(self, expr=None):
-        self.expr = np_empty(0, dtype=object) if expr is None else expr
-        self.expr = self.expr[self.expr != 0]
-
-    def __add__(self, other):
-        if isinstance(other, BExpression):
-            return BExpression(np_concatenate([self.expr, other.expr]))
-        if isinstance(other, BGroup):
-            return BExpression(np_append(self.expr, other))
-        if not np_any(other):
-            return self
-        raise ValueError('Invalid type for addition.')
-    
-    def simplify(self, return_dict=False):
-        
-        b_groups = self.expr                                                                    # Get the multiplicative groups from the expression.
-        # If there are no multiplicative groups, return an empty expression.
-        if not np_any(b_groups):
-            return BExpression()
-
-        coeffs_part = np_vectorize(lambda x: x.coeff)(b_groups)                                  # Get the coefficients from the groups.
-        thetas_part = np_vectorize(lambda x: x.thetas, otypes=[object])(b_groups)
-        masks_part = np_vectorize(lambda x: x.masks, otypes=[object])(b_groups)
-
-        f = b_groups[0].f
-        mask = b_groups[0].mask
-
-        result_dict = {}                                                                        # Create an empty dictionary to store the simplified groups.
-        for coeffs, thetas, masks in zip(coeffs_part, thetas_part, masks_part):
-            # Create a unique key based on the infinite and delta parts.
-            key = (tuple(thetas), tuple(masks))
-            # If the key already exists in the result dictionary, add the function to the existing entry.
-            if key in result_dict:
-                # Update the dictionary with the new function.
-                result_dict[key] = result_dict[key] + coeffs
-            else:
-                # Otherwise, create a new entry with the current function.
-                result_dict[key] = coeffs
-
-        # If the return_dict flag is set, return the dictionary of simplified groups.
-        if return_dict:
-            # Return the dictionary of simplified groups.
-            return result_dict
-
-        return BExpression(np_array([BGroup(coeffs, list(thetas), np_array(masks), f, mask) for (thetas, masks), coeffs in result_dict.items()]))
-
-    
-    def __sub__(self, other):
-        return self + (-other)
-
-    def __neg__(self):
-        return BExpression(-self.expr)
-
-    def __mul__(self, other):
-
-        if isinstance(other, BExpression):
-            result_expression = (
-                self.expr[None, :] * other.expr[:, None]).flatten()
-            return BExpression(result_expression)
-        return BExpression(self.expr * other)
-
-    def __rmul__(self, other):
-        return self.__mul__(other)
-    
-    def doit(self):
-        return np_sum(np_vectorize(lambda x: x.doit(), otypes=[object])(self.expr)).simplify()
-
-    def __str__(self):
-        if len(self.expr) == 0:
-            return '0'
-        return ' + '.join([str(expr) for expr in self.expr])
-
-    def _repr_latex_(self):
-        if len(self.expr) == 0:
-            return '$0$'
-        return '$' + ' + '.join([sp_latex(expr) for expr in self.expr]) + '$'
-
-class BGroup(Expr):
-
-    @property
-    def coeff(self):
-        return self.args[0]
-
-    @property
-    def thetas(self):
-        return self.args[1]
-    
-    @property
-    def masks(self):
-        return self.args[2]
-    
-    @property
-    def f(self):
-        return self.args[3]
-
-    @property
-    def mask(self):
-        return self.args[4]
-
-    def __new__(cls, coeff, thetas, masks:np_ndarray, f=None, mask=None):
-
-        if not np_any(coeff) or len(thetas) == 0:
-            return 0
-
-        obj = Expr.__new__(cls, coeff, thetas, masks, f, mask)
-
-        return obj
-
-    def __neg__(self):
-        return BGroup(-self.coeff, self.thetas, self.masks, self.f, self.mask)
-
-    def __add__(self, other):
-
-        if isinstance(other, BGroup) and other.thetas == self.thetas and np_all(self.masks == other.masks):
-            return BGroup(self.coeff + other.coeff, self.thetas, self.masks, self.f, self.mask)
-        
-        if isinstance(other, BExpression):
-            # Other is a numpy array of MulGroups -> Expression
-            return other + self
-        return BExpression(np_array([self, other], dtype=object))
-
-    def __sub__(self, other):
-        return (self + (-other))
-
-    def __mul__(self, other):
-
-        if isinstance(other, BGroup):
-            
-            if self.masks[-1] == 0 and self.masks[-1] == other.masks[0]:
-                new_theta_middle = self.thetas[-1] + other.thetas[0]
-                new_thetas = self.thetas[:-1] + [new_theta_middle] + other.thetas[1:]
-                new_masks = np_concatenate([self.masks[:-1], other.masks])
-                return BGroup(self.coeff * other.coeff, new_thetas, new_masks, self.f, self.mask)
-            
-            new_thetas = self.thetas + other.thetas
-            new_masks = np_concatenate([self.masks, other.masks])
-            return BGroup(self.coeff * other.coeff, new_thetas, new_masks, self.f, self.mask)
-        
-        if isinstance(other, BExpression):
-            return Expression(self * other.expr)
-        
-        return BGroup(self.coeff * other, self.thetas, self.masks, self.f, self.mask)
-
-    def __rmul__(self, other):
-        return self.__mul__(other)
-    
-    def doit(self):
-        result = []
-        for thetas, mask in zip(self.thetas, self.masks):
-            Zs = self.f(thetas)
-            if mask:
-                Zs = self.mask.apply_mask(Zs)[1]
-            result.append(Zs)
-
-        return np_prod(result) * self.coeff
-
-
-    def _latex(self, printer):
-        result = [Mul(*[Operator(f'z_{o}') for o in theta]) for  theta in self.thetas]
-        result = Mul(*np_vectorize(lambda i: sp_Function('B')(result[i]) if self.masks[i] else result[i])(range(len(result))))
-        return f'{printer._print(self.coeff * result)}'
-
-
 
 class Blocks:
     """
@@ -908,6 +743,17 @@ class Expression:
         if not self.is_time_dependent:
             return Expression()
         return Expression(np_vectorize(lambda x: x.diff(theta), otypes=[object])(self.expr))
+    
+    def dagger(self):
+        """
+        Returns the Hermitian conjugate of the expression.
+
+        Returns
+        -------
+        Expression
+            A new `Expression` representing the Hermitian conjugate.
+        """
+        return Expression(np_vectorize(lambda x: x.dagger(), otypes=[object])(self.expr))
 
     def __str__(self):
         if len(self.expr) == 0:
@@ -1130,6 +976,26 @@ class MulGroup(Expr):
         if not self.is_time_dependent:
             return MulGroup(0, self.inf, self.delta, self.Ns)
         return MulGroup(sp_diff(self.fn, theta), self.inf, self.delta, self.Ns)
+    
+    def dagger(self):
+        """
+        Returns the Hermitian conjugate of the group.
+
+        Returns
+        -------
+        MulGroup
+            A new `MulGroup` representing the Hermitian conjugate.
+        """
+        new_inf = np_vectorize(lambda x: Dagger(x), otypes=[object])(self.inf)
+        new_delta = -self.delta
+        if self.fn.has(BosonOp):
+            subs_dict = dict(zip(self.Ns, nsimplify(self.Ns - new_delta)))
+            new_fn = self.fn.T.applyfunc(Dagger).subs(subs_dict)
+        else:
+            new_fn = self.fn.T.conjugate()
+
+        return MulGroup(new_fn, new_inf, new_delta, self.Ns)
+
     
     def subs(self, substitutions):
         """

@@ -1,12 +1,12 @@
 
 """
 Title: Utils for sympt package
-Date: 16 December 2024
+Date: 24 December 2024
 Authors:
 - Giovanni Francesco Diotallevi
 - Irving Leander Reascos Valencia
 
-DOI: doi.doi.doi
+DOI: https://doi.org/10.48550/arXiv.2412.10240
 
 Description:
 ------------
@@ -31,8 +31,8 @@ Functions:
 14. `get_perturbative_expression`: Constructs a perturbative expansion of a given expression.
 15. `get_matrix`: Generates matrix representations for quantum operators.
 16. `get_boson_matrix`: Generates matrix representations for bosonic operators.
-17. 'get_partitiions_3': Generates list of length-3 partitions whose sum is fixed by input parameter.
-18. 'get_partitions_np1': Generates list of specified length whose sum is less or equal than provided parameter.
+17. 'T': Generates list of length-n partitions whose sum is fixed by input parameter.
+18. 'P': Generates union of Ts whose sum is less or equal than provided parameter.
 
 Dependencies:
 -------------
@@ -63,6 +63,7 @@ from sympy.core.numbers import (
     Float, Half, ImaginaryUnit, Integer, One, Rational, Pi)
 from sympy.physics.quantum import Dagger, Operator
 from sympy.physics.quantum.boson import BosonOp
+from sympy.simplify import nsimplify as sp_nsimplify, simplify as sp_simplify
 
 # Local application/library imports
 from .classes import MulGroup, RDSymbol, RDOperator, Expression, get_matrix, BExpression, BGroup, t
@@ -958,73 +959,3 @@ def P(order):
     for i in range(1, order + 1):
         partitions.extend(T(order, i))
     return partitions
-
-'''
----------------------------------------------------------------------------------------------------------------------------------------
-                                                        Generate Least Action S Equations
-    TO-DOS:
-        [ ]  
----------------------------------------------------------------------------------------------------------------------------------------
-'''
-
-def E_generator(function=None, mask=None):
-    def E(order):
-        result = BExpression()
-        for theta_vec in P(order):
-            if len(theta_vec) % 2 != 0:
-                continue
-            result = result + BGroup(sp_Rational(2, sp_factorial(len(theta_vec))), [theta_vec], [1], function, mask)
-        
-        for (i, j) in T(order, 2):
-            for theta_vec in P(i):
-                for phi_vec in P(j):
-                    coeff = sp_Rational((-1)**len(phi_vec) , (sp_factorial(len(theta_vec)) * sp_factorial(len(phi_vec))))
-                    result +=  BGroup(coeff, [theta_vec], [1], function, mask) * BGroup(1, [phi_vec], [1], function, mask) 
-        return result
-    return memoized(E)
-
-def V_generator(function=None, mask=None):
-    def V(order):
-        partitions = P(order)
-        result = BExpression()
-        for theta_vec in partitions:
-            coeff = sp_Rational(1, sp_factorial(len(theta_vec)))
-            result = result + (BGroup(coeff , [theta_vec], [0], function, mask)  +  BGroup(coeff * (-1)**len(theta_vec), [theta_vec], [1], function, mask))
-        
-        for (i, j) in T(order, 2):
-            for theta_vec in P(i):
-                for phi_vec in P(j):
-                    coeff = sp_Rational((-1)**len(phi_vec) , (sp_factorial(len(theta_vec)) * sp_factorial(len(phi_vec))))
-                    result = result + BGroup(coeff, [theta_vec], [0], function, mask) * BGroup(1, [phi_vec], [1], function, mask) 
-        return result
-    return memoized(V)
-
-def U_generator(function=None, mask=None):
-    V = V_generator(function=function, mask=mask)
-    E = E_generator(function=function, mask=mask)
-
-    def U(order):
-        result = V(order)
-        for theta_vec in P(order):
-            result = result + np_prod([E(o) for o in theta_vec]) * sp_binomial(-sp_Rational(1,2), len(theta_vec))
-
-        for (i, j) in T(order, 2):
-            for theta_vec in P(j):
-                result = result + V(i) * np_prod([E(o) for o in theta_vec]) * sp_binomial(-sp_Rational(1,2), len(theta_vec))
-
-        return result
-    return memoized(U)
-
-def LA_S_generator(function=False, mask=False):
-    U = U_generator(function=function, mask=mask)
-    
-    def LA_S(order):
-        result = U(order)
-        for theta_vec in P(order):
-            if len(theta_vec) == 1:
-                continue
-            result = result - np_prod([LA_S(o) for o in theta_vec]) * sp_Rational(1, sp_factorial(len(theta_vec)))
-
-        return result.simplify()
-    
-    return memoized(LA_S)
