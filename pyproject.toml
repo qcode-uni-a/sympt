@@ -19,12 +19,12 @@ classifiers = [
   "Topic :: Scientific/Engineering",
 ]
 dependencies = [
-    "ipython>=8.20",
-    "multimethod>=1.12",
-    "numpy>=2.0",
-    "sympy>=1.10",
-    "tabulate>=0.9",
-    "tqdm>=4.66",
+    "ipython==8.20",
+    "multimethod==1.12",
+    "numpy==2.0",
+    "sympy==1.10",
+    "tabulate==0.9",
+    "tqdm==4.66",
     "colorama"
 ]
 description = "A solver for perturbative expansions in quantum systems"

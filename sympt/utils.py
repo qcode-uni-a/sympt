@@ -137,7 +137,7 @@ def get_order(factor: Union[exp, cos, sin]):
     return 0, ('other', None)
 
 @multimethod
-def get_order(factor: Union[int, float, complex, Integer, Float, ImaginaryUnit, One, Half, Rational, Pi]):
+def get_order(factor: Union[int, float, complex, Integer, Float, ImaginaryUnit, One, Rational, Half, Pi]):
     """
     Determines the order of basic numeric types.
 
@@ -152,7 +152,6 @@ def get_order(factor: Union[int, float, complex, Integer, Float, ImaginaryUnit, 
         The order and its classification ('other').
     """
     return 0, ('other', None)
-
 
 @multimethod
 def get_order(factor: Pow):

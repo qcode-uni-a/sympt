@@ -189,6 +189,7 @@ def get_P_generator(Hs_memory, Vs_memory, Ws_memory, Etas_memory, Ps_memory):
 
 
         return Wij_to_remove, Wij_to_keep
+    
     @memoized
     def E(i, j):
         if i == 0:
@@ -201,7 +202,6 @@ def get_P_generator(Hs_memory, Vs_memory, Ws_memory, Etas_memory, Ps_memory):
 
         return Eij_to_remove, Eij_to_keep
     
-
     @memoized
     def WE_we(i, j, k):
         W_to_remove, W_to_keep = W(j, i)
@@ -589,7 +589,7 @@ class EffectiveFrame:
                 Q_order_to_remove, Q_order_to_keep = Expression(), Expression()
 
                 #dtEta[order]
-                Q_order_to_remove = Q_order_to_remove + self.__dtEtas.get(order, Expression())
+                self.__Ps[order] = (self.__Ps[order][0] + I * hbar * self.__dtEtas.get(order, Expression()), self.__Ps[order][1])
 
                 for i, j in T(order, 2):
 
@@ -620,7 +620,7 @@ class EffectiveFrame:
             self.__Ps[order] = [apply_commutation_relations(P_t, self.commutation_relations).simplify() for P_t in self.__Ps[order]]
 
             P_to_remove, P_to_keep = B_P(order)
-            self.__Ps[order] = (P_to_remove, P_to_keep)
+            self.__Ps[order] = [P_to_remove, P_to_keep]
             self.__Hs_final[order] = P_to_keep
             self.__Etas[order] = get_Eta(W_delta, P_to_remove, correct_denominator = self.__do_time_dependent and not self.__is_frequency_perturbative)
             self.__Ws[order] = [apply_commutation_relations(W_t, self.commutation_relations).simplify() for W_t in get_W(order)]
@@ -632,6 +632,8 @@ class EffectiveFrame:
             if self.__do_time_dependent and perturbative_order <= max_order:
                 self.__dtWs[perturbative_order]   = [W_t.diff(t) for W_t in self.__Ws[order]]
                 self.__dtEtas[perturbative_order] = self.__Etas[order].diff(t)
+                if perturbative_order == order:
+                    self.__Ps[order] = (self.__Ps[order][0] + I * hbar * self.__dtEtas.get(order, Expression()), self.__Ps[order][1])
 
         self.__Hs_final ={
                 k: (apply_substituitions(v, self.__ns)).simplify() for k, v in self.__Hs_final.items()
