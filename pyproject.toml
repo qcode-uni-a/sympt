@@ -22,7 +22,7 @@ dependencies = [
     "ipython==8.20",
     "multimethod==1.12",
     "numpy==2.0",
-    "sympy==1.10",
+    "sympy==1.13.3",
     "tabulate==0.9",
     "tqdm==4.66",
     "colorama"
