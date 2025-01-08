@@ -23,7 +23,6 @@ This document provides comprehensive guidance on using SymPT, detailing its key 
    - [Schrieffer-Wolff Transformation (SWT)](#schrieffer-wolff-transformation-swt)
    - [Full-Diagonalization (FD)](#full-diagonalization-fd)
    - [Arbitrary Coupling Elimination (ACE)](#arbitrary-coupling-elimination-ace)
-   - [Least-Action Multi-Block Transformations](#least-action-multi-block-transformations)
 7. [Advanced Tools](#advanced-tools)
 8. [Contributing](#contributing)
 9. [License](#license)

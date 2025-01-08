@@ -2,7 +2,7 @@
 """
 Branch: Optimizations branch
 Title: Solver for sympt package
-Date: 24 December 2024
+Date: 8 January 2025
 Authors:
 - Giovanni Francesco Diotallevi
 - Irving Leander Reascos Valencia
@@ -270,12 +270,14 @@ def get_W_generator(Ws_memory, Eta_memory):
             # (Wi_k + Wi_R) * (Wj_k + Wj_R)
             W_to_keep   = W_to_keep   + Wi_to_keep * Wj_to_keep + Wi_to_remove * Wj_to_remove
             W_to_remove = W_to_remove + Wi_to_keep * Wj_to_remove + Wi_to_remove * Wj_to_keep
+
             # -(Wi_k + Wi_R) * Ej
-            W_to_keep   = W_to_keep   - Wi_to_remove * Ej
-            W_to_remove = W_to_remove - Wi_to_keep   * Ej
+            #W_to_keep   = W_to_keep   - Wi_to_remove * Ej
+            #W_to_remove = W_to_remove - Wi_to_keep   * Ej
             # Ei * (Wj_k + Wj_R)
-            W_to_keep   = W_to_keep   + Ei * Wj_to_remove
-            W_to_remove = W_to_remove + Ei * Wj_to_keep
+            #W_to_keep   = W_to_keep   + Ei * Wj_to_remove
+            #W_to_remove = W_to_remove + Ei * Wj_to_keep
+
             # - Ei * Ej
             W_to_keep   = W_to_keep   - Ei * Ej
             
