@@ -48,9 +48,15 @@ SymPT is a symbolic perturbative transformation tool built to help researchers a
 ## Installation
 
 ### From PyPI
+Make sure to install SymPT on a new python environment. To do so, you can use the Anaconda distribution platform
+```bash
+conda create -n sympt python
+```
+
 SymPT is available on PyPI for easy installation:
 
 ```bash
+conda activate sympt
 pip install sympt
 ```
 
@@ -60,6 +66,7 @@ To install SymPT from the source code, clone the repository and install dependen
 ```bash
 git clone https://github.com/qcode-uni-a/sympt.git
 cd SymPT
+conda activate sympt
 pip install .
 ```
 
