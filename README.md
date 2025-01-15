@@ -110,7 +110,7 @@ V = g * sx
 eff_frame = EffectiveFrame(H, V, subspaces=[spin])
 eff_frame.solve(max_order=2, method="SW")
 H_eff = eff_frame.get_H(return_form="operator")
-print(H_eff)
+display(H_eff)
 ```
 
 #### Example 2: Arbitrary Coupling Elimination (ACE)
@@ -121,6 +121,7 @@ from sympy import Rational
 
 # Define symbols
 omega = RDSymbol('omega', order=0, real=True)
+omega_z = RDSymbol('omega_z', order=0, real=True)
 g = RDSymbol('g', order=1, real=True)
 
 # Define basis and operators
@@ -130,14 +131,14 @@ a = BosonOp('a')
 ad = Dagger(a)
 
 # Define Hamiltonian
-H = Rational(1,2) * omega * sz + g * sx * (a + ad)
-mask = Block(fin = sx.matrix, inf = a) # this mask is equivalent to "SW" up to second order
+H = omega * ad * a +  Rational(1,2) * omega_z * sz + g * sx * (a + ad)
+mask = Block(fin = sx, inf = a, subspaces=[spin]) # this mask is equivalent to "SW" up to second order
 
 # Solve ACE transformation
-eff_frame = EffectiveFrame(H)
+eff_frame = EffectiveFrame(H, subspaces=[spin])
 eff_frame.solve(max_order=2, method="ACE", mask=mask)
 H_eff = eff_frame.get_H(return_form="operator")
-print(H_eff)
+display(H_eff)
 ```
 
 ---
