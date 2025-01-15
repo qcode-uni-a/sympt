@@ -108,7 +108,7 @@ V = g * sx
 
 # Setup EffectiveFrame
 eff_frame = EffectiveFrame(H, V, subspaces=[spin])
-eff_frame.solve(max_order=2, method="SW", subspaces=[spin])
+eff_frame.solve(max_order=2, method="SW")
 H_eff = eff_frame.get_H(return_form="operator")
 print(H_eff)
 ```
@@ -131,7 +131,7 @@ ad = Dagger(a)
 
 # Define Hamiltonian
 H = Rational(1,2) * omega * sz + g * sx * (a + ad)
-mask = Block(fin = sx, inf = a) # this mask is equivalent to "SW" up to second order
+mask = Block(fin = sx.matrix, inf = a) # this mask is equivalent to "SW" up to second order
 
 # Solve ACE transformation
 eff_frame = EffectiveFrame(H)
