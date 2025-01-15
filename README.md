@@ -108,7 +108,7 @@ V = g * sx
 
 # Setup EffectiveFrame
 eff_frame = EffectiveFrame(H, V, subspaces=[spin])
-eff_frame.solve(max_order=2, method="SW")
+eff_frame.solve(max_order=2, method="SW", subspaces=[spin])
 H_eff = eff_frame.get_H(return_form="operator")
 print(H_eff)
 ```
@@ -124,7 +124,7 @@ omega = RDSymbol('omega', order=0, real=True)
 g = RDSymbol('g', order=1, real=True)
 
 # Define basis and operators
-spin = RDBasis(name='sigma', dim=2).basis[0]
+spin = RDBasis(name='sigma', dim=2)
 s0, sx, sy, sz = spin.basis
 a = BosonOp('a')
 ad = Dagger(a)
