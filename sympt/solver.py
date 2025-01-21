@@ -841,7 +841,7 @@ class EffectiveFrame:
             The rotated expression in the specified form.
         """
         if max_order is None:
-            max_order = max(self.__S.keys())
+            max_order = self.__max_order
 
         return_form = self.__return_form if return_form is None else return_form
 
