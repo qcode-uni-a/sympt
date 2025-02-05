@@ -424,6 +424,7 @@ class EffectiveFrame:
             self.__H_old = (self.H_input + self.V_input).expand()
             # Set the perturbative interaction to zero
             self.__V_old = S.Zero
+    
 
         if method != 'FD' and method != 'SW' and mask is not None:
             # Add the Hermitian conjugate and the blocks to the mask. This ensures that the mask is Hermitian
@@ -521,7 +522,10 @@ class EffectiveFrame:
                             if not mulgroup.is_t_periodic():
                                 raise ValueError("Non periodic time dependencies are not yet supported")
             ###################################################
-            freqs_orders = [get_order(exponential.args[0])[0] for exponential in (self.__H_old + self.__V_old).atoms(exp) if exponential.has(t)]
+            if method == "SW":
+              freqs_orders = [get_order(exponential.args[0])[0] for exponential in (self.__H_old + self.__V_old).atoms(exp) if exponential.has(t)]
+            else:
+              freqs_orders = [get_order(exponential.args[0])[0] for exponential in self.__H_old.atoms(exp) if exponential.has(t)]
 
             if len(set(freqs_orders)) > 1:
                 raise ValueError('The Hamiltonian contains multiple frequencies with different orders. This is not supported yet.')
