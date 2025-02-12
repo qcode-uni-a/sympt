@@ -58,7 +58,7 @@ from tqdm import tqdm, trange
 from tabulate import tabulate
 from sympy import (Rational as sp_Rational, factorial as sp_factorial,
                    nsimplify as sp_nsimplify, simplify as sp_simplify,
-                   Add as sp_Add, Matrix as sp_Matrix)
+                   Add as sp_Add, Matrix as sp_Matrix, eye as sp_eye)
 from numpy import any as np_any
 # import deep copy
 from copy import copy
@@ -496,6 +496,9 @@ class EffectiveFrame:
                 self.__Hs[h_order] = new_hk
                 self.__Vs[h_order] = new_vk
 
+        if self.__Hs.get(0) is None:
+            raise ValueError("The provided Hamiltonian contains no diagonal zeroth order term.")
+
         # Apply the commutation relations to the zeroth-order Hamiltonian
         H0_expr = apply_commutation_relations(
         self.__Hs.get(0) + Expression(), self.commutation_relations).simplify()
@@ -706,6 +709,8 @@ class EffectiveFrame:
             return O_final_projected
 
         elif return_form == 'matrix':
+            if len(O_final.expr) == 0:
+                return S.Zero
             O_matrix_form = sp_zeros(
                 O_final.expr[0].fn.shape[0], O_final.expr[0].fn.shape[1])
 
@@ -743,6 +748,92 @@ class EffectiveFrame:
         raise ValueError(f'Invalid return form {return_form}. Please choose either: ' + ', '.join(
             ['operator', 'matrix', 'dict', 'dict_operator', 'dict_matrix']))
 
+    def _convert_form(self, collection, ret_form, cache_attrs, result_attr, corrections_attr):
+        """
+        Helper method that converts a dictionary of corrections into the desired form
+        and stores the final result and corrections on the provided attributes.
+
+        Parameters
+        ----------
+        collection : dict
+            The dictionary (e.g. self.__Hs_final or U) whose values will be converted.
+        ret_form : str
+            The desired output form. Valid values are 'operator', 'matrix', 'dict', 
+            'dict_operator', or 'dict_matrix'.
+        cache_attrs : dict
+            A dictionary mapping conversion types to a tuple of attribute names for caching.
+            For example, for H one might have:
+                {
+                    'operator': ('_EffectiveFrame__H_operator_form', '_EffectiveFrame__H_operator_form_corrections'),
+                    'matrix':   ('_EffectiveFrame__H_matrix_form',   '_EffectiveFrame__H_matrix_form_corrections'),
+                    'dict':     ('_EffectiveFrame__H_dict_form',     '_EffectiveFrame__H_dict_form_corrections')
+                }
+        result_attr : str
+            The attribute name on self to store the final result (e.g. "H" or "U").
+        corrections_attr : str
+            The attribute name on self to store the corrections (e.g. "H_corrections" or "U_corrections").
+
+        Returns
+        -------
+        The converted result in the requested form.
+        """
+        if ret_form in ['operator', 'matrix']:
+            # Choose the summing function depending on the form.
+            sum_func = np_sum if ret_form == 'operator' else lambda x: sp_Add(*x)
+            cache_attr, corr_cache_attr = cache_attrs[ret_form]
+            # Return cached result if available.
+            if hasattr(self, cache_attr):
+                setattr(self, corrections_attr, getattr(self, corr_cache_attr))
+                return getattr(self, cache_attr)
+            # Otherwise, convert each element.
+            corrections = {
+                k: self.__prepare_result(v, ret_form)
+                for k, v in tqdm(collection.items(),
+                                desc=f"Converting to {ret_form} form",
+                                disable=not self.verbose)
+            }
+            result = sum_func(list(corrections.values()))
+            setattr(self, corr_cache_attr, corrections)
+            setattr(self, cache_attr, result)
+            setattr(self, corrections_attr, corrections)
+            setattr(self, result_attr, result)
+            return result
+
+        elif 'dict' in ret_form:
+            # Determine the sub-type: e.g., "operator" or "matrix"
+            extra = ret_form.split('_')[1] if '_' in ret_form else self.__return_form
+            new_ret_form = 'dict_' + extra
+            cache_attr, corr_cache_attr = cache_attrs['dict']
+            # Return cached result if available.
+            if hasattr(self, cache_attr) and getattr(self, cache_attr).get(extra) is not None:
+                setattr(self, corrections_attr, getattr(self, corr_cache_attr)[extra])
+                return getattr(self, cache_attr)[extra]
+            if not hasattr(self, cache_attr):
+                setattr(self, cache_attr, {})
+                setattr(self, corr_cache_attr, {})
+
+            corrections = {
+                k: self.__prepare_result(v, new_ret_form)
+                for k, v in tqdm(collection.items(),
+                                desc=f"Converting to dictionary of {extra} form",
+                                disable=not self.verbose)
+            }
+            # Merge the sub-dictionaries.
+            result_dict = {}
+            for subdict in corrections.values():
+                for key, value in subdict.items():
+                    result_dict[key] = result_dict.get(key, 0) + value
+            getattr(self, corr_cache_attr)[extra] = corrections
+            getattr(self, cache_attr)[extra] = result_dict
+            setattr(self, corrections_attr, corrections)
+            setattr(self, result_attr, result_dict)
+            return result_dict
+
+        else:
+            raise ValueError(
+                "Invalid return form. Please choose either: operator, matrix, dict, dict_operator, or dict_matrix."
+            )
+
     def get_H(self, return_form=None):
         """
         Returns the effective Hamiltonian.
@@ -760,68 +851,109 @@ class EffectiveFrame:
         Expression or Matrix
             The effective Hamiltonian in the specified form.
         """
-
         return_form = self.__return_form if return_form is None else return_form
-        self.__Hs_final = {k: v for k, v in self.__Hs_final.items() if v.expr.shape[0] != 0}
+        # Filter out entries with empty expressions.
+        self.__Hs_final = {
+            k: v for k, v in self.__Hs_final.items() if v.expr.shape[0] != 0
+        }
 
         if not hasattr(self, '_EffectiveFrame__Hs_final'):
             raise AttributeError(
-                'The Hamiltonian has not been solved yet. Please run the solver method first.')
+                "The Hamiltonian has not been solved yet. Please run the solver method first."
+            )
 
-        if return_form == 'operator':
-            if hasattr(self, '_EffectiveFrame__H_operator_form'):
-                self.corrections = self.__H_operator_form_corrections
-                self.H = self.__H_operator_form
-                return self.__H_operator_form
+        cache_attrs = {
+            'operator': ('_EffectiveFrame__H_operator_form', '_EffectiveFrame__H_operator_form_corrections'),
+            'matrix':   ('_EffectiveFrame__H_matrix_form',   '_EffectiveFrame__H_matrix_form_corrections'),
+            'dict':     ('_EffectiveFrame__H_dict_form',     '_EffectiveFrame__H_dict_form_corrections'),
+        }
+        # The helper stores the final result in self.H and the corrections in self.H_corrections.
+        return self._convert_form(self.__Hs_final, return_form, cache_attrs, 'H', 'H_corrections')
 
-            self.__H_operator_form_corrections = {k: self.__prepare_result(v, return_form) for k, v in tqdm(self.__Hs_final.items(), desc='Converting to operator form', disable= not self.verbose)}
-            self.__H_operator_form = np_sum(list(self.__H_operator_form_corrections.values()))
-            self.H = self.__H_operator_form
-            self.corrections = self.__H_operator_form_corrections
+    def get_U(self, return_form=None):
+        """
+        Returns the effective frame transformation U.
 
-        elif return_form == 'matrix':
-            if hasattr(self, '_EffectiveFrame__H_matrix_form'):
-                self.corrections = self.__H_matrix_form_corrections
-                self.H = self.__H_matrix_form
-                return self.__H_matrix_form
-            
-            self.__H_matrix_form_corrections = {k: self.__prepare_result(v, return_form) for k, v in tqdm(self.__Hs_final.items(), desc='Converting to matrix form', disable= not self.verbose)}
-            self.__H_matrix_form = sp_Add(*list(self.__H_matrix_form_corrections.values()))
-            self.H = self.__H_matrix_form
-            self.corrections = self.__H_matrix_form_corrections
+        Parameters
+        ----------
+        return_form : str, optional
+            If 'operator', returns the result in operator form (default is 'operator'). 
+            If 'matrix', returns the matrix form.
+            If 'dict' or 'dict_operator', returns the dictionary form with projected finite subspaces.
+            If 'dict_matrix', returns the dictionary form with the full matrix.
 
+        Returns
+        -------
+        Expression or Matrix
+            The effective frame transformation U in the specified form.
+        """
+        if not hasattr(self, '_EffectiveFrame__Up'):
+            raise AttributeError(
+                "The Hamiltonian has not been solved yet. Please run the solver method first."
+            )
 
-        elif 'dict' in return_form:
-            extra = return_form.split(
-                '_')[1] if '_' in return_form else self.__return_form
-            if hasattr(self, '_EffectiveFrame__H_dict_form') and self.__H_dict_form.get(extra) is not None:
-                self.corrections = self.__H_dict_form_corrections[extra]
-                self.H = self.__H_dict_form[extra]
-                return self.__H_dict_form[extra]
-            
-            if not hasattr(self, '_EffectiveFrame__H_dict_form'):
-                self.__H_dict_form = {}
-                self.__H_dict_form_corrections  = {}
+        # Make a copy of U and replace U[0] with an identity operator.
+        U = self.__Up.copy()
+        idMulGroup = MulGroup(
+            fn=sp_eye(U[1].expr[0].fn.shape[0]),
+            inf=[1] * len(U[1].expr[0].inf),
+            delta=[0] * len(U[1].expr[0].delta)
+        )
+        U[0] = Expression(np_array([idMulGroup]))
 
-            self.__H_dict_form_corrections[extra] = {k: self.__prepare_result(v, 'dict' + f'_{extra}') for k, v in tqdm(self.__Hs_final.items(), desc=f'Converting to dictionary of {extra} form', disable= not self.verbose)}
+        return_form = self.__return_form if return_form is None else return_form
 
-            self.__H_dict_form[extra] = {}
-            
-            for _, v in self.__H_dict_form_corrections[extra].items():
-                for k, v1 in v.items():
-                    if self.__H_dict_form.get(k):
-                        self.__H_dict_form[extra][k] += v1
-                    else:
-                        self.__H_dict_form[extra][k] = v1
-            
-            self.H = self.__H_dict_form[extra]
-            self.corrections = self.__H_dict_form_corrections[extra]
-            
-        else:
-            raise ValueError('Invalid return form. Please choose either: ' + ', '.join(
-                ['operator', 'matrix', 'dict', 'dict_operator', 'dict_matrix']))
-        
-        return self.H
+        cache_attrs = {
+            'operator': ('_EffectiveFrame__U_operator_form', '_EffectiveFrame__U_operator_form_corrections'),
+            'matrix':   ('_EffectiveFrame__U_matrix_form',   '_EffectiveFrame__U_matrix_form_corrections'),
+            'dict':     ('_EffectiveFrame__U_dict_form',     '_EffectiveFrame__U_dict_form_corrections'),
+        }
+        # The helper stores the final result in self.U and the corrections in self.U_corrections.
+        return self._convert_form(U, return_form, cache_attrs, 'U', 'U_corrections')
+
+    def get_S(self, return_form=None):
+        """
+        Returns the effective frame transformation S.
+
+        Parameters
+        ----------
+        return_form : str, optional
+            If 'operator', returns the result in operator form (default is 'operator'). 
+            If 'matrix', returns the matrix form.
+            If 'dict' or 'dict_operator', returns the dictionary form with projected finite subspaces.
+            If 'dict_matrix', returns the dictionary form with the full matrix.
+
+        Returns
+        -------
+        Expression or Matrix
+            The effective frame transformation S in the specified form.
+        """
+        if not hasattr(self, '_EffectiveFrame__Up'):
+            raise AttributeError(
+                "The Hamiltonian has not been solved yet. Please run the solver method first."
+            )
+
+        self.__S = {0: Expression()}
+        for order in range(1, self.__max_order + 1):
+            self.__S[order] = - self.__Etas[order]
+            for theta in P(order):
+                if len(theta) % 2 == 0:
+                    continue
+                if len(theta) == 1:
+                    continue
+                self.__S[order] -= sp_Rational(1, sp_factorial(len(theta))) * np_prod([self.__S[k] for k in theta])
+
+            self.__S[order] = self.__S[order].simplify()
+
+        return_form = self.__return_form if return_form is None else return_form
+
+        cache_attrs = {
+            'operator': ('_EffectiveFrame__S_operator_form', '_EffectiveFrame__S_operator_form_corrections'),
+            'matrix':   ('_EffectiveFrame__S_matrix_form',   '_EffectiveFrame__S_matrix_form_corrections'),
+            'dict':     ('_EffectiveFrame__S_dict_form',     '_EffectiveFrame__S_dict_form_corrections'),
+        }
+        # The helper stores the final result in self.S and the corrections in self.S_corrections.
+        return self._convert_form(self.__S, return_form, cache_attrs, 'S', 'S_corrections')
     
     def rotate(self, expr, max_order=None, return_form=None):
         """
