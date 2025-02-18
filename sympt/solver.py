@@ -326,6 +326,11 @@ class EffectiveFrame:
         subspaces : list, optional
             A list of subspaces to consider (default is None).
         """
+        if isinstance(H, ImmutableDenseMatrix):
+            H = sp_Matrix(H)
+        if isinstance(V, ImmutableDenseMatrix):
+            V = sp_Matrix(V)
+            
         v = V if V is not None else sp_zeros(*H.shape) if isinstance(H, sp_Matrix) else 0
         sint_cost_dict = {k : - I * Rational(1,2) * (exp(I * k.args[0]) - exp(-I * k.args[0])) for k in (H + v).atoms(sin) if k.has(t)}
         sint_cost_dict.update({k : Rational(1,2) * (exp(I * k.args[0]) + exp(-I * k.args[0])) for k in (H + v).atoms(cos) if k.has(t)})
@@ -567,7 +572,7 @@ class EffectiveFrame:
 
         return H0_expr, B_P
     
-    def solve(self, max_order=2, method='SW', mask=None):
+    def solve(self, max_order=2, method='SW', mask=None, extract_ns=False):
         """
         Solves for the effective Hamiltonian up to the specified order using the Schrieffer-Wolff transformation.
 
@@ -643,9 +648,13 @@ class EffectiveFrame:
                 self.__dtEtas[perturbative_order] = self.__Etas[order].diff(t)
                 if perturbative_order == order:
                     self.__Ps[order] = (self.__Ps[order][0] + I * hbar * self.__dtEtas.get(order, Expression()), self.__Ps[order][1])
-
-        self.__Hs_final ={
-                k: (apply_substituitions(v, self.__ns)).simplify() for k, v in self.__Hs_final.items()
+        
+        if extract_ns:
+            self.__Hs_final ={
+                    k: (apply_substituitions(v, self.__ns)).simplify() for k, v in self.__Hs_final.items()
+                }
+            self.__Up = {
+                    k: (apply_substituitions(v, self.__ns)).simplify() for k, v in self.__Up.items()
             }
 
         # Store the results
@@ -911,7 +920,7 @@ class EffectiveFrame:
         # The helper stores the final result in self.U and the corrections in self.U_corrections.
         return self._convert_form(U, return_form, cache_attrs, 'U', 'U_corrections')
 
-    def get_S(self, return_form=None):
+    def get_S(self, return_form=None, extract_ns=False):
         """
         Returns the effective frame transformation S.
 
@@ -943,7 +952,9 @@ class EffectiveFrame:
                     continue
                 self.__S[order] -= sp_Rational(1, sp_factorial(len(theta))) * np_prod([self.__S[k] for k in theta])
 
-            self.__S[order] = self.__S[order].simplify()
+            self.__S[order] = apply_commutation_relations(self.__S[order], self.commutation_relations).simplify()
+            if extract_ns:
+                self.__S[order] = apply_substituitions(self.__S[order], self.__ns).simplify()
 
         return_form = self.__return_form if return_form is None else return_form
 
@@ -955,7 +966,7 @@ class EffectiveFrame:
         # The helper stores the final result in self.S and the corrections in self.S_corrections.
         return self._convert_form(self.__S, return_form, cache_attrs, 'S', 'S_corrections')
     
-    def rotate(self, expr, max_order=None, return_form=None):
+    def rotate(self, expr, max_order=None, return_form=None, extract_ns=False):
         """
         Rotates a given expression according to the computed transformation S.
 
@@ -1000,7 +1011,10 @@ class EffectiveFrame:
             if self.__do_time_dependent:
                 H_rotated_order.append(I * hbar * np_sum(self.__Qs[order]))
 
-            H_rotated[order] = apply_substituitions(apply_commutation_relations(np_sum(H_rotated_order), self.commutation_relations), self.__ns).simplify()
+            if extract_ns:
+                H_rotated[order] = apply_substituitions(apply_commutation_relations(np_sum(H_rotated_order), self.commutation_relations), self.__ns).simplify()
+            else:
+                H_rotated[order] = apply_commutation_relations(np_sum(H_rotated_order), self.commutation_relations).simplify()
                 
 
         result = np_sum(list(H_rotated.values())).simplify()

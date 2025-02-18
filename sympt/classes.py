@@ -1460,7 +1460,7 @@ class RDSymbol(Symbol):
 
     Attributes:
     -----------
-    order : int
+    order : float
         The order of the symbol (used in specific algebraic contexts).
 
     Methods:

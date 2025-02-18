@@ -55,7 +55,7 @@ from numpy import (any as np_any, all as np_all, array as np_array,
                    ones as np_ones, vectorize as np_vectorize,
                    zeros as np_zeros, nonzero as np_nonzero,
                    prod as np_prod, block as np_block)
-from sympy import (Expr, Mul, Add, Pow, Symbol, Matrix, exp, latex, diag as sp_diag,
+from sympy import (Expr, Mul, Add, Pow, Symbol, Matrix, ImmutableDenseMatrix, exp, latex, diag as sp_diag,
                    cos, sin, factor_terms as sp_factor_terms, conjugate, 
                    factorial as sp_factorial, Rational as sp_Rational, binomial as sp_binomial,
                    Mul as sp_Mul)
@@ -246,7 +246,7 @@ def get_order(expr: Expr):
 
 
 @multimethod
-def group_by_order(expr:Matrix):
+def group_by_order(expr: Union[Matrix, ImmutableDenseMatrix]):
     """
     Groups terms in a matrix by their order, separating finite and infinite terms.
 
@@ -262,6 +262,9 @@ def group_by_order(expr:Matrix):
 
         {order: [{'other': [other_factors], 'finite': [finite_operators], 'infinite': {infinite_operators}}, ...]}
     """
+    if isinstance(expr, ImmutableDenseMatrix):
+        expr = Matrix(expr)
+
     result = {}
     expr_non_zeros = np_nonzero(expr)
     for i, j in zip(*expr_non_zeros):
@@ -861,7 +864,7 @@ def get_perturbative_expression(expr, structure, subspaces=None):
     dict
         A dictionary mapping orders to their corresponding simplified expressions.
     """
-    if isinstance(expr, Matrix):
+    if isinstance(expr, Matrix) or isinstance(expr, ImmutableDenseMatrix):
         subspaces = None
     expr_ordered_dict = group_by_order(expr)
     orders = np_array(list(expr_ordered_dict.keys()))
