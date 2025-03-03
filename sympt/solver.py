@@ -904,9 +904,9 @@ class EffectiveFrame:
         # Make a copy of U and replace U[0] with an identity operator.
         U = self.__Up.copy()
         idMulGroup = MulGroup(
-            fn=sp_eye(U[1].expr[0].fn.shape[0]),
-            inf=[1] * len(U[1].expr[0].inf),
-            delta=[0] * len(U[1].expr[0].delta)
+            fn=sp_eye(self.__Hs_final[0].expr[0].fn.shape[0]),
+            inf =   [1] * len(self.__Hs_final[0].expr[0].inf),
+            delta = [0] * len(self.__Hs_final[0].expr[0].delta)
         )
         U[0] = Expression(np_array([idMulGroup]))
 
@@ -944,7 +944,7 @@ class EffectiveFrame:
 
         self.__S = {0: Expression()}
         for order in range(1, self.__max_order + 1):
-            self.__S[order] = - self.__Etas[order]
+            self.__S[order] = - self.__Etas.get(order, Expression())
             for theta in P(order):
                 if len(theta) % 2 == 0:
                     continue
@@ -1001,12 +1001,12 @@ class EffectiveFrame:
             H_rotated_order = [Os.get(order, Expression()), (self.__Up[order] * Os.get(0, Expression())), (Os.get(0, Expression()) * self.__Upc[order])]
 
             for i, j in list(T(order, 2)):   
-                H_rotated_order.append((self.__Up[i] * Os.get(0, Expression()) * self.__Upc[j]))
-                H_rotated_order.append((self.__Up[i] * Os.get(j, Expression())))
+                H_rotated_order.append((self.__Up.get(i, Expression()) * Os.get(0, Expression()) * self.__Upc.get(j, Expression())))
+                H_rotated_order.append((self.__Up.get(i, Expression()) * Os.get(j, Expression())))
                 H_rotated_order.append((Os.get(i, Expression()) * self.__Upc[j]))
             
             for i,j,k in list(T(order, 3)):
-                H_rotated_order.append((self.__Up[i] * Os.get(j, Expression()) * self.__Upc[k]))
+                H_rotated_order.append((self.__Up.get(i, Expression()) * Os.get(j, Expression()) * self.__Upc.get(k, Expression())))
 
             if self.__do_time_dependent:
                 H_rotated_order.append(I * hbar * np_sum(self.__Qs[order]))
