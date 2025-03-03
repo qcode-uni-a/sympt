@@ -2,7 +2,7 @@
 
 Welcome to **SymPT**, a Python package designed for performing symbolic perturbative transformations on quantum systems. SymPT leverages the **Schrieffer-Wolff Transformation (SWT)** and other related techniques to compute effective Hamiltonians in a systematic and efficient manner. The library offers a suite of tools for block-diagonalization, full-diagonalization, and custom transformations, supporting both time-independent and time-dependent systems.
 
-This document provides comprehensive guidance on using SymPT, detailing its key features, algorithms, and implementation. Let’s dive in!
+This document provides comprehensive guidance on using SymPT, detailing its key features, algorithms, and implementation. Detailed documentation can be found [here](https://qcode-uni-a.github.io/sympt/). 
 
 ---
 
