@@ -1,12 +1,18 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
 authors:
-  - family-names: Benito, Diotallevi, Reascos
-    given-names: Monica, Giovanni Francesco, Leander
-    orcid: xxxxxxxxx
-title: "sympt"
-version: 1.0
+  - family-names: Diotallevi
+    given-names: Giovanni Francesco
+  - family-names: Reascos
+    given-names: Leander
+  - family-names: Benito
+    given-names: Mónica
+title: "SymPT: a comprehensive tool for automating effective Hamiltonian derivations"
+version: 1.2.1
 identifiers:
-  - type: doi
-    value: xxxxxxxx
-date-released: xxxxxxxx
+  - type: arXiv
+    value: 2412.10240
+    url: "https://arxiv.org/abs/2412.10240"
+date-released: 2024
+repository-code: "https://github.com/your-repo/sympt"
+license: "MIT"
