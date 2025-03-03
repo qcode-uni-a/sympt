@@ -1,0 +1,32 @@
+
+/* Highlight words inside backticks (...) Light mode */
+code:not([class]):not(pre code) {
+    background-color: rgba(129, 129, 129, 0.075); /* Light background */
+    color: #c792ea; /* Purple text */
+    padding: 2px 4px;
+    border-radius: 4px;
+    font-weight: bold;
+}
+
+/* ============================== */
+/* Code Block Styling (
+
+python) */
+/* ============================== */
+.md-typeset pre {
+    background-color: #1e1e1e !important; /* Dark mode */
+    border: 1px solid #333 !important;
+    border-radius: 8px;
+}
+
+.md-typeset pre code {
+    color: #75dd9d !important; /* Light green text */
+    font-size: 14px;
+}
+
+/* Syntax colors for Python */
+.highlight .kn { color: #c792ea; } /* Keywords (def, class, etc.) */
+.highlight .s1 { color: #a3be8c; } /* Strings */
+.highlight .mi { color: #ffcb6b; } /* Numbers */
+.highlight .nb { color: #82aaff; } /* Built-in functions */
+.highlight .o  { color: #f78c6c; } /* Operators */
