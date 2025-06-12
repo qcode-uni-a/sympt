@@ -992,7 +992,7 @@ class MulGroup(Expr):
             subs_dict = dict(zip(self.Ns, nsimplify(self.Ns - new_delta)))
             new_fn = self.fn.T.applyfunc(Dagger).subs(subs_dict)
         else:
-            new_fn = self.fn.T.conjugate()
+            new_fn = self.fn.T.applyfunc(Dagger)
 
         return MulGroup(new_fn, new_inf, new_delta, self.Ns)
 
